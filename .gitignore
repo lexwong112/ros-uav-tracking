@@ -1,0 +1,6 @@
+config/human_classes.txt
+config/human_yolov4-custom.cfg
+config/mask_classes.txt
+config/mask_yolov4-custom.cfg
+config/mask_yolov4-obj_final.weights
+config/human_yolov4.weights
