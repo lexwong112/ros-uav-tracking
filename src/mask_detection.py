@@ -8,7 +8,7 @@ from logging import Logger
 import roslib
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
-
+from sensor_msgs.msg import CompressedImage
 import rospy
 import sys
 
@@ -74,14 +74,16 @@ class Mask_Detection:
         print(model_cfg, "loaded.")
 
     def detection(self, cv_image, boxes, centers, confidences):
-        detection_count = len(boxes)
-
+        #detection_count = len(boxes)
+        
         filtered_boxes = []
         filtered_confidences = []
         filtered_class_ids = []
         filtered_centers = []
 
-        for i in range(detection_count):
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        #for i in range(detection_count):
+        for i in indices.flatten():
             x, y, w, h = boxes[i]
 
             try:
@@ -108,29 +110,24 @@ class Mask_Detection:
                         filtered_class_ids.append(class_id)
                         
                         print(rospy.get_rostime(), ": people without mask detected")
-                        
-        #show_detected_image(self, cv_image, filtered_boxes, filtered_confidences, filtered_class_ids)
+
+        print(filtered_centers)  
+        show_detected_image(self, cv_image, filtered_boxes, filtered_confidences, filtered_class_ids)
         return filtered_boxes, filtered_centers, filtered_confidences   
         
-def show_detected_image(self, image, filtered_boxes, filtered_confidences, filtered_class_ids):
-        indices = cv2.dnn.NMSBoxes(filtered_boxes, filtered_confidences, 0.5, 0.4)
-        for i in indices:
-            print(i)
-            prev_i = -1
-            if prev_i != i:
-                box = filtered_boxes[i]
-                left = box[0]
-                top = box[1]
-                width = box[2]
-                height = box[3]
-                # camera_coordinates = project_2d_to_3d(color, filtered_centers[i])
-                cv2.rectangle(image, (left, top), (left + width, top + height), (0, 0, 255), 2, 8, 0)
-                cv2.putText(image, self.classes[filtered_class_ids[i]], (left, top), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                            (0, 255, 0), 2)
-                cv2.putText(image, str(filtered_confidences[i]), (left, top + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255),
-                            2)
-                prev_i = i
-
+def show_detected_image(self, image, boxes, confidences, class_ids):
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        if len(indices) > 0:
+            for i in indices.flatten():
+                #get coordinates
+                (x, y) = (boxes[i][0], boxes[i][1])
+                (w, h) = (boxes[i][2], boxes[i][3])
+                #darw bounding box and label
+                color = 112#[int(c) for c in COLORS[class_ids[i]]]
+                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2, lineType=cv2.LINE_AA)
+                text = "{}: {:.4f}".format(self.classes[class_ids[i]], confidences[i])
+                cv2.putText(image, text, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 1, lineType=cv2.LINE_AA)
+                
         cv2.imshow("Image window", image)
         cv2.waitKey(3)
         
@@ -184,6 +181,8 @@ class Human_Detection:
                     x = int(c_x - w / 2)
                     y = int(c_y - h / 2)
 
+                    box = detection[0:4] * np.array([width, height, width, height])
+
                     boxes.append([x, y, w, h])
                     centers.append([c_x, c_y])
                     confidences.append(float(confidence))
@@ -200,7 +199,8 @@ class image_converter:
     def __init__(self):
         # self.image_pub = rospy.Publisher("result topic",data type, queue_size=10)
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.color_callback)#, queue_size=1)
+        #self.image_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.color_callback)#, queue_size=1)
+        self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback)#, queue_size=1)
         self.output_pub = rospy.Publisher("/human_tracking/mask_detection/result/centers", String, queue_size=10)
         self.rate = 1
 
@@ -209,12 +209,16 @@ class image_converter:
 
     def color_callback(self, data):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            #cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            np_arr = np.frombuffer(data.data, np.uint8)
+            cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
         except CvBridgeError as e:
             print(e)
 
-        boxes, centers, confidences = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
-        #boxes, centers, confidences = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #very lag and delay
+        #boxes, centers, confidences = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
+        boxes, centers, confidences = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #very lag and delay
+
+        print(centers)
 
         # 2D to 3D
         #result = project_2d_to_3d(cv_image, cv_depth, centers)
