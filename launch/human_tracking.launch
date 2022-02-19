@@ -1,0 +1,10 @@
+<launch>
+    <node pkg="human_tracking" name="mask_detection" type="mask_detection.py" output="screen">
+
+    </node>
+
+    <node pkg="human_tracking" name="mask_detection_2" type="mask_detection.py" output="screen">
+        
+    </node>
+
+</launch>
