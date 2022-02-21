@@ -3,7 +3,7 @@
 
     </node>
 
-    <node pkg="human_tracking" name="mask_detection_2" type="mask_detection.py" output="screen">
+    <node pkg="human_tracking" name="show_image" type="draw_boxes.py" output="screen">
         
     </node>
 
