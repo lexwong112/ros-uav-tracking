@@ -9,6 +9,8 @@ import roslib
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CameraInfo
+
 import rospy
 import sys
 
@@ -39,8 +41,8 @@ def remove_suffix(text, prefix):
 
 
 def project_2d_to_3d(depth, center):
-    depth_profile = depth.get_profile()
-    cvs_profile = rs.video_stream_profile(depth_profile)
+    #depth_profile = depth.get_profile()
+    cvs_profile = rs.video_stream_profile(depth)
     color_intrinsic = cvs_profile.get_intrinsics()
     #camera_coordiantes = []
 
@@ -57,6 +59,28 @@ def project_2d_to_3d(depth, center):
         camera_coordiantes.append([result[2], -result[0], -result[1]])
     #
     return camera_coordiantes
+
+import struct
+
+def convert_depth_to_phys_coord_using_realsense(centers, camera_depth, cameraInfo):
+    _intrinsics = rs.intrinsics()
+    _intrinsics.width = cameraInfo.width
+    _intrinsics.height = cameraInfo.height
+    _intrinsics.ppx = cameraInfo.K[2]
+    _intrinsics.ppy = cameraInfo.K[5]
+    _intrinsics.fx = cameraInfo.K[0]
+    _intrinsics.fy = cameraInfo.K[4]
+    #_intrinsics.model = cameraInfo.distortion_model
+    _intrinsics.model  = rs.distortion.none
+    _intrinsics.coeffs = [i for i in cameraInfo.D]
+
+    result = []
+    for x, y in centers:
+        if x<480 and y<848:
+            result.append(rs.rs2_deproject_pixel_to_point(intrin=_intrinsics, pixel=[x, y], depth=camera_depth[x][y]))
+
+    #result[0]: right, result[1]: down, result[2]: forward
+    return result#[2], -result[0], -result[1]
 
 class Mask_Detection:
     def __init__(self) -> None:
@@ -249,46 +273,79 @@ class Human_Tracking_Node:
         self.Mask_Detection = Mask_Detection()
         self.Human_Detection = Human_Detection()
         self.image_sub = message_filters.Subscriber('/camera/color/image_raw/compressed', CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        self.depth_sub = message_filters.Subscriber('/camera/depth/image_rect_raw/compressed', CompressedImage)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
-        self.output_pub = rospy.Publisher("/human_tracking/mask_detection/result/centers", String, queue_size=10)
+        self.depth_sub = message_filters.Subscriber('/camera/depth/image_rect_raw', Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
+        self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
+        self.camera_info = message_filters.Subscriber('/camera/depth/camera_info', CameraInfo)
+        #self.imageDisplayer = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.only_image_callback, queue_size=1)
+
         self.rate = 1
-        self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub], 10, 10)
+        self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 10, 10)
         self.timeSync.registerCallback(self.callback)
-       
+        self.boxes = []
+        self.centers = []
+        self.confidences = []
+        self.class_ids = []
         self.frame = 0
 
-    def callback(self, image, depth):
+    def callback(self, image, depth, camera_info):
+        #self.image_sub.unregister()
+        try:
+            #cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            #np_arr = np.frombuffer(image.data, np.uint8)
+            cv_image = self.bridge.compressed_imgmsg_to_cv2(image)#np_arr, cv2.IMREAD_COLOR) 
+            #np_arr = np.frombuffer(depth.data, np.uint8)
+            cv_depth = self.bridge.imgmsg_to_cv2(depth, depth.encoding)
+        except CvBridgeError as e:
+            print(e)
+
+        #boxes, centers, confidences, class_ids = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
+        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "human detection")
+        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #very lag and delay
+        #boxes, centers, confidences, class_ids = self.Mask_Detection.detection_2(cv_image)
+        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "mask detection")
+        
+        #self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
+        # 2D to 3D
+        result = convert_depth_to_phys_coord_using_realsense(self.centers, cv_depth, camera_info)
+        print(result)
+
+
+    def boxesPublisher(self):
+        self.output_pub.publish(str(self.boxes)+'|'+str(self.confidences)+'|'+str(self.class_ids))
+
+    def only_image_callback(self, image):
         print("new image")
         #self.image_sub.unregister()
         try:
             #cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
             np_arr = np.frombuffer(image.data, np.uint8)
             cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
-            np_arr = np.frombuffer(depth.data, np.uint8)
-            cv_depth = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
         except CvBridgeError as e:
             print(e)
 
         #boxes, centers, confidences, class_ids = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
         #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "human detection")
-        boxes, centers, confidences, class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #very lag and delay
+        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #very lag and delay
         #boxes, centers, confidences, class_ids = self.Mask_Detection.detection_2(cv_image)
-        show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "mask detection")
-
+        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "mask detection")
+        
         #self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
         # 2D to 3D
-        #result = project_2d_to_3d(cv_depth, centers)
-        print(result)
-    def depth_callback(self, data):
-        pass
+        #result = convert_depth_to_phys_coord_using_realsense(centers, depth, camera_info)
+        #print(result)
+
+        
+
 
 def main(args):
     rospy.init_node('human_tracking', anonymous=True)
     tracking = Human_Tracking_Node()
 
-    rospy.Rate = 1
-    rospy.spin()
+    rospy.Rate = 1/30
+    #rospy.spin()
     while not rospy.is_shutdown():
+        tracking.boxesPublisher()
+        #rospy.spinOnce()
         rospy.sleep(rospy.Rate)
 
     cv2.destroyAllWindows()
