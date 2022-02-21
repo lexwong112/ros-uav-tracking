@@ -26,7 +26,7 @@ import message_filters
 
 roslib.load_manifest('human_tracking')
 
-print(cv2.__version__)
+print("OpenCV Version: ", cv2.__version__)
 
 detection_flag = True
 
@@ -62,7 +62,7 @@ def project_2d_to_3d(depth, center):
 
 import struct
 
-def convert_depth_to_phys_coord_using_realsense(centers, camera_depth, cameraInfo):
+def getCoordinate(x, y, camera_depth, cameraInfo):
     _intrinsics = rs.intrinsics()
     _intrinsics.width = cameraInfo.width
     _intrinsics.height = cameraInfo.height
@@ -75,12 +75,11 @@ def convert_depth_to_phys_coord_using_realsense(centers, camera_depth, cameraInf
     _intrinsics.coeffs = [i for i in cameraInfo.D]
 
     result = []
-    for x, y in centers:
-        if x<480 and y<848:
-            result.append(rs.rs2_deproject_pixel_to_point(intrin=_intrinsics, pixel=[x, y], depth=camera_depth[x][y]))
-
     #result[0]: right, result[1]: down, result[2]: forward
-    return result#[2], -result[0], -result[1]
+    return (rs.rs2_deproject_pixel_to_point(intrin=_intrinsics, pixel=[x, y], depth=camera_depth[x][y]))
+
+
+    
 
 class Mask_Detection:
     def __init__(self) -> None:
@@ -99,50 +98,6 @@ class Mask_Detection:
 
         print(model_weights, "loaded.")
         print(model_cfg, "loaded.")
-
-    def detection_2(self, cv_image):
-         # print(self.image)
-        confidences = []
-        boxes = []
-        centers = []
-        class_ids = []
-
-        height, width = cv_image.shape[:2]
-
-        # layer_names = self.net.getLayerNames()
-        blob = cv2.dnn.blobFromImage(cv_image, 1.0 / 255.0, (416, 416), None, True, False)
-        output_layers = self.net.getUnconnectedOutLayersNames()
-        # print(self.image.shape)
-        self.net.setInput(blob)
-        outs = self.net.forward(output_layers)
-
-        for out in outs:
-            for detection in out:
-                scores = detection[5:]
-                class_id = np.argmax(scores)
-                confidence = scores[class_id]
-                if confidence > 0.01:
-                    # Object detected
-                    # print(class_id)
-                    c_x = int(detection[0] * width)
-                    c_y = int(detection[1] * height)
-                    w = int(detection[2] * width)
-                    h = int(detection[3] * height)
-
-                    # Rectangle coordinates
-                    x = int(c_x - w / 2)
-                    y = int(c_y - h / 2)
-
-                    box = detection[0:4] * np.array([width, height, width, height])
-
-                    boxes.append([x, y, w, h])
-                    centers.append([c_x, c_y])
-                    confidences.append(float(confidence))
-                    class_ids.append(class_id)
-                    #print(rospy.get_rostime(), ": people without mask detected")
-
-        #show_detected_image(self, cv_image, boxes, confidences, class_ids)
-        return boxes, centers, confidences, class_ids
 
     def detection(self, cv_image, boxes, centers, confidences, class_ids=[]):
         filtered_boxes = []
@@ -294,7 +249,7 @@ class Human_Tracking_Node:
             #np_arr = np.frombuffer(image.data, np.uint8)
             cv_image = self.bridge.compressed_imgmsg_to_cv2(image)#np_arr, cv2.IMREAD_COLOR) 
             #np_arr = np.frombuffer(depth.data, np.uint8)
-            cv_depth = self.bridge.imgmsg_to_cv2(depth, depth.encoding)
+            cv_depth = self.bridge.imgmsg_to_cv2(depth)
         except CvBridgeError as e:
             print(e)
 
@@ -306,8 +261,13 @@ class Human_Tracking_Node:
         
         #self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
         # 2D to 3D
-        result = convert_depth_to_phys_coord_using_realsense(self.centers, cv_depth, camera_info)
-        print(result)
+        indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
+        if len(indices) > 0:
+            for i in indices.flatten():
+                x, y = self.centers[i]
+                if x < 848 and y < 480:
+                    result = getCoordinate(y, x, cv_depth, camera_info)
+                    print("people coordinates(x y z): ", result)
 
 
     def boxesPublisher(self):
