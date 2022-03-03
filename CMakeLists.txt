@@ -137,9 +137,8 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(mask_detection 
-src/mask_detection.cpp
-src/utils/yoloNet.cpp)
+add_executable(offb_mode 
+src/offb_mode.cpp)
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -151,7 +150,7 @@ src/utils/yoloNet.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(mask_detection
+target_link_libraries(offb_mode
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
