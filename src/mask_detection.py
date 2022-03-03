@@ -62,6 +62,7 @@ def project_2d_to_3d(depth, center):
 
 import struct
 
+#get 3d coordinates
 def getCoordinate(x, y, camera_depth, cameraInfo):
     _intrinsics = rs.intrinsics()
     _intrinsics.width = cameraInfo.width
@@ -222,6 +223,7 @@ class Human_Detection:
         
         return boxes, centers, confidences, class_ids
 
+#not finish
 class Camera:
     def __init__(self):
         self.topic_color_image = ""
@@ -235,43 +237,39 @@ class Human_Tracking_Node:
         self.bridge = CvBridge()
         self.Mask_Detection = Mask_Detection()
         self.Human_Detection = Human_Detection()
+
+        #color_topic = rospy.get_param("")
         self.image_sub = message_filters.Subscriber('/camera/color/image_raw/compressed', CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
         self.depth_sub = message_filters.Subscriber('/camera/depth_aligned_to_color_and_infra1/image_raw', Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
         self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
         self.camera_info = message_filters.Subscriber('/camera/depth_aligned_to_color_and_infra1/camera_info', CameraInfo)
         #self.imageDisplayer = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.only_image_callback, queue_size=1)
 
+
         self.rate = 1
+
+        #sync three topic
         self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 1, 1)
         self.timeSync.registerCallback(self.callback)
+
         self.boxes = []
         self.centers = []
         self.confidences = []
         self.class_ids = []
         self.frame = 0
-        #self.align = rs.align(rs.stream.color)
         
-
+    #When there is a new image updated, call this function
     def callback(self, image, depth, camera_info):
-        #self.image_sub.unregister()
-        print("new frame received")
         try:
-            #cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-            #np_arr = np.frombuffer(image.data, np.uint8)
-            cv_image = self.bridge.compressed_imgmsg_to_cv2(image)#np_arr, cv2.IMREAD_COLOR) 
-            #np_arr = np.frombuffer(depth.data, np.uint8)
+            cv_image = self.bridge.compressed_imgmsg_to_cv2(image)
             cv_depth = self.bridge.imgmsg_to_cv2(depth)
+
         except CvBridgeError as e:
             print(e)
 
-        #boxes, centers, confidences, class_ids = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
-        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "human detection")
-        #self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #very lag and delay
-        self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image)
-        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "mask detection")
-        
-        #self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        # 2D to 3D
+        #detect people and pass people to detect mask
+        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) 
+
         indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
         if len(indices) > 0:
             for i in indices.flatten():
@@ -279,16 +277,15 @@ class Human_Tracking_Node:
                 if x < 848 and y < 480:
                     result = getCoordinate(y, x, cv_depth, camera_info)
                     print("people coordinates(x y z): ", result)
+                    #publish target coordinates to other node to do further function!
 
-
+    #publish bounding boxes, draw_boxes.py will receive the data and display the image with bounding box.
     def boxesPublisher(self):
         self.output_pub.publish(str(self.boxes)+'|'+str(self.confidences)+'|'+str(self.class_ids))
 
+    #for test only
     def only_image_callback(self, image):
-        print("new image")
-        #self.image_sub.unregister()
         try:
-            #cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
             np_arr = np.frombuffer(image.data, np.uint8)
             cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
         except CvBridgeError as e:
@@ -296,29 +293,26 @@ class Human_Tracking_Node:
 
         #boxes, centers, confidences, class_ids = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
         #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "human detection")
-        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image)#, *self.Human_Detection.detection(cv_image)) #very lag and delay
-        #boxes, centers, confidences, class_ids = self.Mask_Detection.detection_2(cv_image)
-        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "mask detection")
-        
-        #self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        # 2D to 3D
-        #result = convert_depth_to_phys_coord_using_realsense(centers, depth, camera_info)
-        #print(result)
+        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image))
 
+    #align color and depth resulotion
+    #no need this function, realsense_ros provide this function
     def color_depth_align(self, color, depth):
         aligned_frames = self.align.process()
         color_frame = aligned_frames.first(rs.stream.color)
         aligned_depth_frame = aligned_frames.get_depth_frame()
         pass
 
-        
-
-
 def main(args):
+    #create a ros node name "human_tracking"
     rospy.init_node('human_tracking', anonymous=True)
+
+    #create new class and start listening new image data
     tracking = Human_Tracking_Node()
 
+    #set publish frequance
     rospy.Rate = 1/30
+
     #rospy.spin()
     while not rospy.is_shutdown():
         tracking.boxesPublisher()

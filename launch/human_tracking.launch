@@ -1,6 +1,6 @@
 <launch>
     <node pkg="human_tracking" name="mask_detection" type="mask_detection.py" output="screen">
-
+        <param name="color_topic" value="/camera/color/image_raw"/>
     </node>
 
     <node pkg="human_tracking" name="show_image" type="draw_boxes.py" output="screen">
