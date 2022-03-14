@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Twist.h>
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
@@ -25,6 +26,24 @@ void getCurrentPose(const geometry_msgs::PoseStamped::ConstPtr& msg)
     current_pose = *msg;
 }
 
+void mannualControl(const geometry_msgs::Twist msg)
+{
+    geometry_msgs::Twist cmd = msg;
+    pose.pose.position.x+=cmd.linear.x/50;
+    pose.pose.position.y+=cmd.angular.z/50;
+}
+
+void mannualControl_high(const geometry_msgs::Twist msg)
+{
+    geometry_msgs::Twist cmd = msg;
+    pose.pose.position.z+=cmd.linear.x/50;
+    pose.pose.orientation.z+=cmd.angular.z/50;
+    if(pose.pose.orientation.z > 1)
+        pose.pose.orientation.z=1;
+    else if(pose.pose.orientation.z < -1)
+        pose.pose.orientation.z=-1;
+}
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "offb_node");
@@ -41,10 +60,10 @@ int main(int argc, char **argv)
 
     ros::Subscriber target_coord_sub = nh.subscribe<geometry_msgs::PoseStamped>("target/coordinates", 10, setPoint);
 
-    ros::Subscriber target_coord_sub = nh.subscribe<geometry_msgs::PoseStamped>("target/coordinates", 10, getCurrentPose);
+    ros::Subscriber current_pose_sub = nh.subscribe<geometry_msgs::PoseStamped>("target/coordinates", 10, getCurrentPose);
 
     //the setpoint publishing rate MUST be faster than 2Hz
-    ros::Rate rate(20.0);
+    ros::Rate rate(30.0);
 
     // wait for FCU connection
     while(ros::ok() && !current_state.connected){
@@ -72,21 +91,20 @@ int main(int argc, char **argv)
 
     ros::Time last_request = ros::Time::now();
 
+    ros::Subscriber control_sub = nh.subscribe<geometry_msgs::Twist>("/cmd_vel", 10, mannualControl);
+    ros::Subscriber control_high_sub = nh.subscribe<geometry_msgs::Twist>("/cmd_vel_high", 10, mannualControl_high);
+
     while(ros::ok()){
-        if( current_state.mode != "OFFBOARD" &&
-            (ros::Time::now() - last_request > ros::Duration(5.0))){
-            if( set_mode_client.call(offb_set_mode) &&
-                offb_set_mode.response.mode_sent){
+        if( current_state.mode != "OFFBOARD" && (ros::Time::now() - last_request > ros::Duration(5.0))){
+            if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.mode_sent){
                 ROS_INFO("Offboard enabled");
             } else {
                 ROS_INFO("Offboard enable failed!");
             }
             last_request = ros::Time::now();
         } else {
-            if( !current_state.armed &&
-                (ros::Time::now() - last_request > ros::Duration(5.0))){
-                if( arming_client.call(arm_cmd) &&
-                    arm_cmd.response.success){
+            if( !current_state.armed && (ros::Time::now() - last_request > ros::Duration(5.0))){
+                if( arming_client.call(arm_cmd) && arm_cmd.response.success){
                     ROS_INFO("Vehicle armed");
                 } else {
                     ROS_INFO("Vehicle not armed");
@@ -94,7 +112,6 @@ int main(int argc, char **argv)
                 last_request = ros::Time::now();
             }
         }
-        pose.header.stamp = ros::Time::now();
         local_pos_pub.publish(pose);
 
         ros::spinOnce();

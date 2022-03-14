@@ -31,8 +31,8 @@ roslib.load_manifest('human_tracking')
 class Boxes_Drawer:
     def __init__(self):
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.getImage)
-        self.depth_sub = rospy.Subscriber("/camera/depth_aligned_to_color_and_infra1/image_raw", Image, self.getDepth)
+        self.image_sub = rospy.Subscriber(rospy.get_param("/mask_detection/color_topic"), CompressedImage, self.getImage)
+        self.depth_sub = rospy.Subscriber(rospy.get_param("/mask_detection/depth_topic"), Image, self.getDepth)
         self.boxes_sub = rospy.Subscriber("/human_tracking/mask_detection/boxes", String, self.getBoxes)
 
         self.boxes = []
@@ -82,7 +82,9 @@ class Boxes_Drawer:
                 cv2.rectangle(cv_image, (x, y-28), (x + w, y), (255,255,255), -1)
                 cv2.putText(cv_image, text, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 1, lineType=cv2.LINE_AA)
 
-        cv2.rectangle(cv_image, (99, 99), (101, 101), color, 2, lineType=cv2.LINE_AA)          
+        #cv2.rectangle(cv_image, (99, 99), (101, 101), color, 2, lineType=cv2.LINE_AA)       
+        #cv2.rectangle(cv_image, (99, 199), (101, 201), color, 2, lineType=cv2.LINE_AA)
+        #cv2.rectangle(cv_image, (99, 299), (101, 301), color, 2, lineType=cv2.LINE_AA)   
         cv2.imshow(windowName, cv_image)
         cv2.waitKey(3)
 
@@ -99,7 +101,7 @@ class Boxes_Drawer:
 
 
 def main(args):
-    rospy.init_node('human_tracking_drawer', anonymous=True)
+    rospy.init_node('boxes_drawer', anonymous=True)
 
     bd = Boxes_Drawer()
 

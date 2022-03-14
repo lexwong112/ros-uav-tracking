@@ -15,8 +15,7 @@ import rospy
 import sys
 
 import glob
-
-import sys
+import os
 
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
@@ -84,9 +83,9 @@ def getCoordinate(x, y, camera_depth, cameraInfo):
 
 class Mask_Detection:
     def __init__(self) -> None:
-        model_weights = "/home/ho/catkin_ws/src/human_tracking/config/mask_yolov4-obj_final.weights"
-        model_cfg = "/home/ho/catkin_ws/src/human_tracking/config/mask_yolov4-custom.cfg"
-        model_classname = "/home/ho/catkin_ws/src/human_tracking/config/mask_classes.txt"
+        model_weights = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_weights"))
+        model_cfg = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_cfg"))
+        model_classname = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_classname"))
 
         self.net = cv2.dnn.readNetFromDarknet(model_cfg, model_weights)
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
@@ -139,9 +138,9 @@ class Mask_Detection:
                             if class_id == 1:
                                 maskDetected = True
                             
-            print(numPeople, " people detected.")
-            if maskDetected:
-                print("people without mask detected")
+            #print(numPeople, " people detected.")
+            #if maskDetected:
+            #    print("people without mask detected")
 
         #show_detected_image(self, cv_image, filtered_boxes, filtered_confidences, filtered_class_ids)
         return filtered_boxes, filtered_centers, filtered_confidences, filtered_class_ids
@@ -167,9 +166,9 @@ def show_detected_image(self, image, boxes, confidences, class_ids, windowName =
    
 class Human_Detection:
     def __init__(self) -> None:
-        model_weights = "/home/ho/catkin_ws/src/human_tracking/config/human_yolov4.weights"
-        model_cfg = "/home/ho/catkin_ws/src/human_tracking/config/human_yolov4-custom.cfg"
-        model_classname = "/home/ho/catkin_ws/src/human_tracking/config/human_classes.txt"
+        model_weights = os.path.expanduser(rospy.get_param("/mask_detection/human_model_weights"))
+        model_cfg = os.path.expanduser(rospy.get_param("/mask_detection/human_model_cfg"))
+        model_classname = os.path.expanduser(rospy.get_param("/mask_detection/human_model_classname"))
         self.net = cv2.dnn.readNetFromDarknet(model_cfg, model_weights)
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
@@ -201,7 +200,7 @@ class Human_Detection:
                 scores = detection[5:]
                 class_id = np.argmax(scores)
                 confidence = scores[class_id]
-                if class_id == 0 and confidence > 0.6:
+                if class_id == 0 and confidence > 0.2:
                     c_x = int(detection[0] * width)
                     c_y = int(detection[1] * height)
                     w = int(detection[2] * width)
@@ -238,28 +237,32 @@ class Human_Tracking_Node:
         self.Mask_Detection = Mask_Detection()
         self.Human_Detection = Human_Detection()
 
-        #color_topic = rospy.get_param("")
-        self.image_sub = message_filters.Subscriber('/camera/color/image_raw/compressed', CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        self.depth_sub = message_filters.Subscriber('/camera/depth_aligned_to_color_and_infra1/image_raw', Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
-        self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
-        self.camera_info = message_filters.Subscriber('/camera/depth_aligned_to_color_and_infra1/camera_info', CameraInfo)
-        #self.imageDisplayer = rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.only_image_callback, queue_size=1)
+        #color_topic = rospy.get_param("/mask_detection/color_topic")
+        self.image_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/color_topic"), CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
+        self.depth_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_topic"), Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
+        self.camera_info = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_camera_info"), CameraInfo)
 
+        self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
 
         self.rate = 1
 
         #sync three topic
-        self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 1, 1)
+        self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 10, 10)
         self.timeSync.registerCallback(self.callback)
 
         self.boxes = []
         self.centers = []
         self.confidences = []
         self.class_ids = []
+
         self.frame = 0
         
     #When there is a new image updated, call this function
     def callback(self, image, depth, camera_info):
+        self.frame += 1
+        if self.frame%20 is 0:
+            print(self.frame," frames received")
+            
         try:
             cv_image = self.bridge.compressed_imgmsg_to_cv2(image)
             cv_depth = self.bridge.imgmsg_to_cv2(depth)
@@ -276,8 +279,8 @@ class Human_Tracking_Node:
                 x, y = self.centers[i]
                 if x < 848 and y < 480:
                     result = getCoordinate(y, x, cv_depth, camera_info)
-                    print("people coordinates(x y z): ", result)
-                    #publish target coordinates to other node to do further function!
+                    print("people coordinates: ", result)
+                    #publish target coordinates to other node to do furrther function!
 
     #publish bounding boxes, draw_boxes.py will receive the data and display the image with bounding box.
     def boxesPublisher(self):
@@ -295,13 +298,13 @@ class Human_Tracking_Node:
         #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "human detection")
         self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image))
 
+        indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
+        if len(indices) > 0:
+            for i in indices.flatten():
+                print(self.confidences[i])
+
+
     #align color and depth resulotion
-    #no need this function, realsense_ros provide this function
-    def color_depth_align(self, color, depth):
-        aligned_frames = self.align.process()
-        color_frame = aligned_frames.first(rs.stream.color)
-        aligned_depth_frame = aligned_frames.get_depth_frame()
-        pass
 
 def main(args):
     #create a ros node name "human_tracking"
