@@ -37,11 +37,24 @@ void mannualControl_high(const geometry_msgs::Twist msg)
 {
     geometry_msgs::Twist cmd = msg;
     pose.pose.position.z+=cmd.linear.x/50;
-    pose.pose.orientation.z+=cmd.angular.z/50;
+    pose.pose.orientation.z+=cmd.angular.z/500;
     if(pose.pose.orientation.z > 1)
         pose.pose.orientation.z=1;
     else if(pose.pose.orientation.z < -1)
         pose.pose.orientation.z=-1;
+}
+
+void target_tracking(const geometry_msgs::Twist msg)
+{
+    geometry_msgs::Twist cmd = msg;
+    if(cmd.linear.y > 1)
+    {
+        pose.pose.position.y -= 0.1;
+    }
+    else if(cmd.linear.y < 0)
+    {
+        pose.pose.position.y += 0.1;
+    }
 }
 
 int main(int argc, char **argv)
@@ -94,6 +107,7 @@ int main(int argc, char **argv)
     ros::Subscriber control_sub = nh.subscribe<geometry_msgs::Twist>("/cmd_vel", 10, mannualControl);
     ros::Subscriber control_high_sub = nh.subscribe<geometry_msgs::Twist>("/cmd_vel_high", 10, mannualControl_high);
 
+    ros::Subscriber target_sub = nh.subscribe<geometry_msgs::Twist>("/human_tracking/mask_detection/target", 10, target_tracking);
     while(ros::ok()){
         if( current_state.mode != "OFFBOARD" && (ros::Time::now() - last_request > ros::Duration(5.0))){
             if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.mode_sent){

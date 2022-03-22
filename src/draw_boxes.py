@@ -36,7 +36,7 @@ class Boxes_Drawer:
         self.boxes_sub = rospy.Subscriber("/human_tracking/mask_detection/boxes", String, self.getBoxes)
 
         self.boxes = []
-        self.classes = ["with mask", "without mask"]
+        self.classes = ["with mask", "without mask", "test"]
         self.class_ids = []
         self.confidences = []
 
@@ -70,17 +70,23 @@ class Boxes_Drawer:
         color = (255, 1, 12)#[int(c) for c in COLORS[class_ids[i]]]
         if len(self.indices) > 0:
             for i in self.indices.flatten():
-                #get coordinates
-                (x, y) = (self.boxes[i][0], self.boxes[i][1])
-                (w, h) = (self.boxes[i][2], self.boxes[i][3])
-                #darw bounding box
+                if self.class_ids[i] is not 2:
+                    #get coordinates
+                    (x, y) = (self.boxes[i][0], self.boxes[i][1])
+                    (w, h) = (self.boxes[i][2], self.boxes[i][3])
+                    #darw bounding box
+                    
+                    cv2.rectangle(cv_image, (x, y), (x + w, y + h), color, 2, lineType=cv2.LINE_AA)             
+                    #put text
+                    text = "{}: {:.2f}".format(self.classes[self.class_ids[i]], self.confidences[i])
+
+                    cv2.rectangle(cv_image, (x, y-28), (x + w, y), (255,255,255), -1)
                 
-                cv2.rectangle(cv_image, (x, y), (x + w, y + h), color, 2, lineType=cv2.LINE_AA)             
-                #put text
-                text = "{}: {:.2f}".format(self.classes[self.class_ids[i]], self.confidences[i])
-                
-                cv2.rectangle(cv_image, (x, y-28), (x + w, y), (255,255,255), -1)
-                cv2.putText(cv_image, text, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 1, lineType=cv2.LINE_AA)
+                    cv2.putText(cv_image, text, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 1, lineType=cv2.LINE_AA)
+                else:
+                    (x, y) = (self.boxes[i][0], self.boxes[i][1])
+                    (w, h) = (self.boxes[i][2], self.boxes[i][3])
+                    cv2.rectangle(cv_image, (x, y), (x + 1, y + 1), color, 2, lineType=cv2.LINE_AA)             
 
         #cv2.rectangle(cv_image, (99, 99), (101, 101), color, 2, lineType=cv2.LINE_AA)       
         #cv2.rectangle(cv_image, (99, 199), (101, 201), color, 2, lineType=cv2.LINE_AA)

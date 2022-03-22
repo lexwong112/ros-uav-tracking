@@ -10,6 +10,8 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import CameraInfo
+from std_msgs.msg import Bool
+from geometry_msgs.msg import Twist
 
 import rospy
 import sys
@@ -229,6 +231,44 @@ class Camera:
         self.topic_depth_image = ""
         self.topic_depth_info = ""
 
+class coord_debugger:
+    def __init__(self):
+        self.coord_sub = rospy.Subscriber("/test_coord", Twist, self.test_coord)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
+        self.coord_sub = rospy.Subscriber("/track_btn", Bool, self.set_target)
+        self.coord_x = 10
+        self.coord_y = 10
+
+        self.track_target = False
+        self.target_x = 0
+        self.target_y = 0
+
+    def test_coord(self, msg):
+        self.coord_x -= msg.angular.z
+        self.coord_y -= msg.linear.x
+
+        if  self.coord_x < 0:
+            self.coord_x = 0
+
+        if  self.coord_y < 0:
+            self.coord_y = 0
+
+    def set_target(self, msg):
+        if msg.data is True:
+
+            self.target_x = int(self.coord_x)
+            self.target_y = int(self.coord_y)
+            self.track_target = True
+            print("target: ",self.target_x, "  |  ", self.target_y)
+            if  self.target_x < 0:
+                self.target_x = 0
+
+            if  self.target_y < 0:
+                self.target_y = 0
+
+    def getCoord(self):
+        return self.coord_x, self.coord_y
+
+
     
 
 class Human_Tracking_Node:
@@ -244,6 +284,10 @@ class Human_Tracking_Node:
 
         self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
 
+        self.target_pub = rospy.Publisher("/human_tracking/mask_detection/target", Twist, queue_size=10)
+
+        self.target = Twist()
+
         self.rate = 1
 
         #sync three topic
@@ -257,6 +301,53 @@ class Human_Tracking_Node:
 
         self.frame = 0
         
+        #self.debugger = coord_debugger()
+        #For Test Only#######################################################################################
+        self.coord_sub = rospy.Subscriber("/test_coord", Twist, self.test_coord)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
+        self.track_btn_sub = rospy.Subscriber("/track_btn", Bool, self.set_target)
+        self.coord_x = 10
+        self.coord_y = 10
+
+        self.track_target = False
+        self.target_x = 0
+        self.target_y = 0
+
+    def test_coord(self, msg):
+        self.coord_x -= msg.angular.z
+        self.coord_y -= msg.linear.x
+
+        if  self.coord_x < 0:
+            self.coord_x = 0
+
+        if  self.coord_y < 0:
+            self.coord_y = 0
+
+        self.boxes.append([int(self.coord_x), int(self.coord_y), int(self.coord_x)+1, int(self.coord_y)+1])
+        self.centers.append([int(self.coord_x), int(self.coord_y)])
+        self.confidences.append(1)
+        self.class_ids.append(2)
+
+        
+
+    def set_target(self, msg):
+        if msg.data is True:
+
+            self.target_x = int(self.coord_x)
+            self.target_y = int(self.coord_y)
+            self.track_target = True
+            print("target: ",self.target_x, "  |  ", self.target_y)
+            if  self.target_x < 0:
+                self.target_x = 0
+
+            if  self.target_y < 0:
+                self.target_y = 0
+
+    def getCoord(self):
+        return self.coord_x, self.coord_y
+    #########################################################################################   
+    # 
+    # 
+    #  
     #When there is a new image updated, call this function
     def callback(self, image, depth, camera_info):
         self.frame += 1
@@ -271,44 +362,49 @@ class Human_Tracking_Node:
             print(e)
 
         #detect people and pass people to detect mask
-        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) 
-
+        #self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) 
+        #self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image)
+        self.boxes, self.centers, self.confidences, self.class_ids = [],[],[],[]
         indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
         if len(indices) > 0:
             for i in indices.flatten():
                 x, y = self.centers[i]
-                if x < 848 and y < 480:
-                    result = getCoordinate(y, x, cv_depth, camera_info)
-                    print("people coordinates: ", result)
-                    #publish target coordinates to other node to do furrther function!
+                result = getCoordinate(y, x, cv_depth, camera_info)
+                #print("people coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
+                #publish target coordinates to other node to do furrther function!
+                self.target.linear.x = float('{0:.3g}'.format(result[0]/1000))
+                self.target.linear.y = float('{0:.3g}'.format(result[1]/1000))
+                self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
+                #self.target_pub.publish(self.target)
+
+        #for test only
+        if self.track_target is True:
+            result = getCoordinate(self.target_y, self.target_x, cv_depth, camera_info)
+            print("target coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
+            #publish target coordinates to other node to do furrther function!
+            self.target.linear.x = float('{0:.3g}'.format(result[0]/1000))
+            self.target.linear.y = float('{0:.3g}'.format(result[1]/1000))
+            self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
+            self.target_pub.publish(self.target)
+            self.track_target = False
+
+        result = getCoordinate(int(self.coord_y), int(self.coord_x), cv_depth, camera_info)
+        print("test point: x: ", int(self.coord_x), " | y: ", int(self.coord_y))
+        print("test coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
+
+        self.boxes.append([int(self.coord_x), int(self.coord_y), int(self.coord_x)+1, int(self.coord_y)+1])
+        self.centers.append([int(self.coord_x), int(self.coord_y)])
+        self.confidences.append(1)
+        self.class_ids.append(2)
+
 
     #publish bounding boxes, draw_boxes.py will receive the data and display the image with bounding box.
     def boxesPublisher(self):
         self.output_pub.publish(str(self.boxes)+'|'+str(self.confidences)+'|'+str(self.class_ids))
 
-    #for test only
-    def only_image_callback(self, image):
-        try:
-            np_arr = np.frombuffer(image.data, np.uint8)
-            cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
-        except CvBridgeError as e:
-            print(e)
-
-        #boxes, centers, confidences, class_ids = self.Human_Detection.detection(cv_image) #well detect for human but show many boxes on same person
-        #show_detected_image(self.Mask_Detection, cv_image, boxes, confidences, class_ids, "human detection")
-        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image))
-
-        indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
-        if len(indices) > 0:
-            for i in indices.flatten():
-                print(self.confidences[i])
-
-
-    #align color and depth resulotion
-
 def main(args):
     #create a ros node name "human_tracking"
-    rospy.init_node('human_tracking', anonymous=True)
+    rospy.init_node('mask_detection', anonymous=True)
 
     #create new class and start listening new image data
     tracking = Human_Tracking_Node()
