@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
@@ -9,6 +10,12 @@
 mavros_msgs::State current_state;
 geometry_msgs::PoseStamped pose;
 geometry_msgs::PoseStamped current_pose;
+geometry_msgs::TwistStamped setVelocity;
+
+
+
+enum Flight_Mode {position_mode, velocity_mode};
+Flight_Mode flight_mode;
 
 void state_cb(const mavros_msgs::State::ConstPtr& msg)
 {
@@ -29,32 +36,55 @@ void getCurrentPose(const geometry_msgs::PoseStamped::ConstPtr& msg)
 void mannualControl(const geometry_msgs::Twist msg)
 {
     geometry_msgs::Twist cmd = msg;
-    pose.pose.position.x+=cmd.linear.x/50;
-    pose.pose.position.y+=cmd.angular.z/50;
+    //pose.pose.position.x+=cmd.linear.x/50;
+    //pose.pose.position.y+=cmd.angular.z/50;
+
+    setVelocity.twist.linear.x = cmd.linear.x;
+    setVelocity.twist.linear.y = cmd.angular.z;
+    flight_mode = velocity_mode;
 }
 
 void mannualControl_high(const geometry_msgs::Twist msg)
 {
     geometry_msgs::Twist cmd = msg;
-    pose.pose.position.z+=cmd.linear.x/50;
+    /*pose.pose.position.z+=cmd.linear.x/50;
     pose.pose.orientation.z+=cmd.angular.z/500;
     if(pose.pose.orientation.z > 1)
         pose.pose.orientation.z=1;
     else if(pose.pose.orientation.z < -1)
-        pose.pose.orientation.z=-1;
+        pose.pose.orientation.z=-1;*/
+
+    setVelocity.twist.linear.z = cmd.linear.x;
+    if(cmd.angular.z > 0)
+    {
+        setVelocity.twist.angular.z = cmd.angular.z;//0.5;
+    }
+    else if(cmd.angular.z < 0)
+    {
+        setVelocity.twist.angular.z = cmd.angular.z;//-0.5;
+    }
+    else
+    {
+        setVelocity.twist.angular.z = 0;
+    }
+    
+
+    flight_mode = velocity_mode;
 }
 
 void target_tracking(const geometry_msgs::Twist msg)
 {
     geometry_msgs::Twist cmd = msg;
-    if(cmd.linear.y > 1)
+    if(cmd.linear.y > 1.5)
     {
         pose.pose.position.y -= 0.1;
     }
-    else if(cmd.linear.y < 0)
+    else if(cmd.linear.y < 0.5)
     {
         pose.pose.position.y += 0.1;
     }
+    
+    
 }
 
 int main(int argc, char **argv)
@@ -66,6 +96,8 @@ int main(int argc, char **argv)
             ("mavros/state", 10, state_cb);
     ros::Publisher local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>
             ("mavros/setpoint_position/local", 10);
+    ros::Publisher velocity_pub = nh.advertise<geometry_msgs::TwistStamped>
+            ("/mavros/setpoint_velocity/cmd_vel", 10);
     ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
             ("mavros/cmd/arming");
     ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
@@ -78,12 +110,13 @@ int main(int argc, char **argv)
     //the setpoint publishing rate MUST be faster than 2Hz
     ros::Rate rate(30.0);
 
+    flight_mode = position_mode;
+    
     // wait for FCU connection
     while(ros::ok() && !current_state.connected){
         ros::spinOnce();
         rate.sleep();
     }
-
     
     pose.pose.position.x = 0;
     pose.pose.position.y = 0;
@@ -126,7 +159,21 @@ int main(int argc, char **argv)
                 last_request = ros::Time::now();
             }
         }
-        local_pos_pub.publish(pose);
+
+        switch (flight_mode)
+        {
+        case position_mode:
+            local_pos_pub.publish(pose);
+            break;
+
+        case velocity_mode:
+            velocity_pub.publish(setVelocity);
+            break;
+        
+        default:
+            break;
+        }
+        
 
         ros::spinOnce();
         rate.sleep();

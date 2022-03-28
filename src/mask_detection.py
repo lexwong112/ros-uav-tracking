@@ -331,16 +331,10 @@ class Human_Tracking_Node:
 
     def set_target(self, msg):
         if msg.data is True:
-
-            self.target_x = int(self.coord_x)
-            self.target_y = int(self.coord_y)
             self.track_target = True
-            print("target: ",self.target_x, "  |  ", self.target_y)
-            if  self.target_x < 0:
-                self.target_x = 0
-
-            if  self.target_y < 0:
-                self.target_y = 0
+        else:
+            self.track_target = False
+            
 
     def getCoord(self):
         return self.coord_x, self.coord_y
@@ -379,6 +373,16 @@ class Human_Tracking_Node:
 
         #for test only
         if self.track_target is True:
+            self.target_x = int(self.coord_x)
+            self.target_y = int(self.coord_y)
+            self.track_target = True
+            print("target: ",self.target_x, "  |  ", self.target_y)
+            if  self.target_x < 0:
+                self.target_x = 0
+
+            if  self.target_y < 0:
+                self.target_y = 0
+
             result = getCoordinate(self.target_y, self.target_x, cv_depth, camera_info)
             print("target coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
             #publish target coordinates to other node to do furrther function!
@@ -386,7 +390,6 @@ class Human_Tracking_Node:
             self.target.linear.y = float('{0:.3g}'.format(result[1]/1000))
             self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
             self.target_pub.publish(self.target)
-            self.track_target = False
 
         result = getCoordinate(int(self.coord_y), int(self.coord_x), cv_depth, camera_info)
         print("test point: x: ", int(self.coord_x), " | y: ", int(self.coord_y))
