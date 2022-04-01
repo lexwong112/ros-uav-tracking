@@ -356,20 +356,20 @@ class Human_Tracking_Node:
             print(e)
 
         #detect people and pass people to detect mask
-        #self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) 
-        #self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image)
-        self.boxes, self.centers, self.confidences, self.class_ids = [],[],[],[]
+        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #detect people without mask 
+        #self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image) #detect only people
+        #self.boxes, self.centers, self.confidences, self.class_ids = [],[],[],[] #disable detection
         indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
         if len(indices) > 0:
             for i in indices.flatten():
                 x, y = self.centers[i]
                 result = getCoordinate(y, x, cv_depth, camera_info)
-                #print("people coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
+                print("people coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
                 #publish target coordinates to other node to do furrther function!
-                self.target.linear.x = float('{0:.3g}'.format(result[0]/1000))
-                self.target.linear.y = float('{0:.3g}'.format(result[1]/1000))
+                self.target.linear.x = x
+                self.target.linear.y = y
                 self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
-                #self.target_pub.publish(self.target)
+                self.target_pub.publish(self.target)
 
         #for test only
         if self.track_target is True:
@@ -386,8 +386,8 @@ class Human_Tracking_Node:
             result = getCoordinate(self.target_y, self.target_x, cv_depth, camera_info)
             print("target coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
             #publish target coordinates to other node to do furrther function!
-            self.target.linear.x = float('{0:.3g}'.format(result[0]/1000))
-            self.target.linear.y = float('{0:.3g}'.format(result[1]/1000))
+            self.target.linear.x = self.target_x
+            self.target.linear.y = self.target_y
             self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
             self.target_pub.publish(self.target)
 

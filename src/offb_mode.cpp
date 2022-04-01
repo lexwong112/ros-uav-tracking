@@ -12,6 +12,8 @@ geometry_msgs::PoseStamped pose;
 geometry_msgs::PoseStamped current_pose;
 geometry_msgs::TwistStamped setVelocity;
 
+int image_width;
+
 
 
 enum Flight_Mode {position_mode, velocity_mode};
@@ -75,17 +77,33 @@ void mannualControl_high(const geometry_msgs::Twist msg)
 void target_tracking(const geometry_msgs::Twist msg)
 {
     geometry_msgs::Twist cmd = msg;
-    if(cmd.linear.y > 1.5)
+    /*if(cmd.linear.y > 1.5)
     {
         pose.pose.position.y -= 0.1;
     }
     else if(cmd.linear.y < 0.5)
     {
         pose.pose.position.y += 0.1;
+    }*/
+
+    //check object in center
+
+        //check object in center
+    if(cmd.linear.x > ((image_width/2)+20))
+    {
+        setVelocity.twist.angular.z = 0.5;
     }
-    
-    
+    else if(cmd.linear.x < ((image_width/2)-20))
+    {
+        setVelocity.twist.angular.z = -0.5;
+    }
+    else
+    {
+        setVelocity.twist.angular.z = 0;
+    }
 }
+
+
 
 int main(int argc, char **argv)
 {
@@ -106,6 +124,8 @@ int main(int argc, char **argv)
     ros::Subscriber target_coord_sub = nh.subscribe<geometry_msgs::PoseStamped>("target/coordinates", 10, setPoint);
 
     ros::Subscriber current_pose_sub = nh.subscribe<geometry_msgs::PoseStamped>("target/coordinates", 10, getCurrentPose);
+
+    nh.getParam("image_size_width", image_width);
 
     //the setpoint publishing rate MUST be faster than 2Hz
     ros::Rate rate(30.0);
