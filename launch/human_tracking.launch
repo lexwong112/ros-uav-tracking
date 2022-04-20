@@ -1,5 +1,5 @@
 <launch>
-    <arg name="image_size_height" value="360"/>
+    <arg name="image_size_height" value="480"/>
     <arg name="image_size_width" value="640"/>
 
     <node pkg="human_tracking" name="offboard" type="offb_mode" output="screen">

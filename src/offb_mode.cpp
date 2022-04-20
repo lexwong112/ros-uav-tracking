@@ -6,6 +6,9 @@
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include <std_msgs/String.h>
+#include <iostream>
+
+using namespace std;
 
 mavros_msgs::State current_state;
 geometry_msgs::PoseStamped pose;
@@ -13,7 +16,7 @@ geometry_msgs::PoseStamped current_pose;
 geometry_msgs::TwistStamped setVelocity;
 
 int image_width;
-
+int image_height;
 
 
 enum Flight_Mode {position_mode, velocity_mode};
@@ -67,7 +70,7 @@ void mannualControl_high(const geometry_msgs::Twist msg)
     }
     else
     {
-        setVelocity.twist.angular.z = 0;
+
     }
     
 
@@ -77,30 +80,65 @@ void mannualControl_high(const geometry_msgs::Twist msg)
 void target_tracking(const geometry_msgs::Twist msg)
 {
     geometry_msgs::Twist cmd = msg;
-    /*if(cmd.linear.y > 1.5)
+    if(cmd.linear.x ==0 &&cmd.linear.y==0)
     {
-        pose.pose.position.y -= 0.1;
-    }
-    else if(cmd.linear.y < 0.5)
-    {
-        pose.pose.position.y += 0.1;
-    }*/
+        setVelocity.twist.angular.z = 0;
+        //flight_mode = position_mode;
+        ROS_INFO("no target");
 
-    //check object in center
-
-        //check object in center
-    if(cmd.linear.x > ((image_width/2)+20))
-    {
-        setVelocity.twist.angular.z = 0.5;
-    }
-    else if(cmd.linear.x < ((image_width/2)-20))
-    {
-        setVelocity.twist.angular.z = -0.5;
+        setVelocity.twist.angular.z = 0;
+        
     }
     else
     {
-        setVelocity.twist.angular.z = 0;
+        if(cmd.linear.x > ((image_width/2)+30))
+        {
+            setVelocity.twist.angular.z = -0.3;
+            ROS_INFO("Target tracking r: ");
+        }
+        else if(cmd.linear.x < ((image_width/2)-30))
+        {
+            setVelocity.twist.angular.z = 0.3;
+            ROS_INFO("Target tracking l: ");
+        }
+        else
+        {
+            setVelocity.twist.angular.z = 0;
+            ROS_INFO("Target tracking c");
+        }
+
+        if(cmd.linear.y > ((image_height/2)+30))
+        {
+
+            setVelocity.twist.linear.y = -0.3;
+            ROS_INFO("Target tracking r: ");
+        }
+        else if(cmd.linear.y < ((image_height/2)-30))
+        {
+
+            setVelocity.twist.linear.y = 0.3;
+            ROS_INFO("Target tracking l: ");
+        }
+        else
+        {
+            setVelocity.twist.linear.y = 0;
+            ROS_INFO("Target tracking c");
+        }
+
+        flight_mode = velocity_mode;
     }
+
+    //keep high position in velocity control
+    if(current_pose.pose.position.z<2.5)
+    {
+        setVelocity.twist.linear.z = 0.2;
+    }
+    else
+    {
+        setVelocity.twist.linear.z = 0;
+    }
+
+    
 }
 
 
@@ -125,14 +163,15 @@ int main(int argc, char **argv)
 
     ros::Subscriber current_pose_sub = nh.subscribe<geometry_msgs::PoseStamped>("target/coordinates", 10, getCurrentPose);
 
-    nh.getParam("image_size_width", image_width);
-
+    //nh.getParam("/offboard/image_size_width", image_width);
+    nh.param("image_size_width", image_width, 640);// image_width=1280; //realsense cam: 1280, E2ES: 640
+    nh.param("image_size_height", image_height, 480);
     //the setpoint publishing rate MUST be faster than 2Hz
     ros::Rate rate(30.0);
 
     flight_mode = position_mode;
     
-    // wait for FCU connection
+    ROS_INFO("wait for FCU connection"); 
     while(ros::ok() && !current_state.connected){
         ros::spinOnce();
         rate.sleep();
@@ -142,7 +181,7 @@ int main(int argc, char **argv)
     pose.pose.position.y = 0;
     pose.pose.position.z = 2;
 
-    //send a few setpoints before starting
+    ROS_INFO("send a few setpoints before starting"); 
     for(int i = 100; ros::ok() && i > 0; --i){
         local_pos_pub.publish(pose);
         ros::spinOnce();
@@ -161,6 +200,9 @@ int main(int argc, char **argv)
     ros::Subscriber control_high_sub = nh.subscribe<geometry_msgs::Twist>("/cmd_vel_high", 10, mannualControl_high);
 
     ros::Subscriber target_sub = nh.subscribe<geometry_msgs::Twist>("/human_tracking/mask_detection/target", 10, target_tracking);
+
+    pose.pose.position.z = 2.8;
+
     while(ros::ok()){
         if( current_state.mode != "OFFBOARD" && (ros::Time::now() - last_request > ros::Duration(5.0))){
             if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.mode_sent){

@@ -40,45 +40,29 @@ def remove_suffix(text, prefix):
     if text.endswith(prefix):
         return text[:len(text) - len(prefix)]
 
-
-def project_2d_to_3d(depth, center):
-    #depth_profile = depth.get_profile()
-    cvs_profile = rs.video_stream_profile(depth)
-    color_intrinsic = cvs_profile.get_intrinsics()
-    #camera_coordiantes = []
-
-    if len(center) != 0:
-        dis = depth.get_distance(center[0], center[1])
-        print("dis", dis)
-        result = rs.rs2_deproject_pixel_to_point(color_intrinsic,
-                                                 center,
-                                                 dis)
-        # result[0]: right
-        # result[1]: down
-        # result[2]: forward
-        print(result[2], -result[0], -result[1])
-        camera_coordiantes.append([result[2], -result[0], -result[1]])
-    #
-    return camera_coordiantes
-
 import struct
 
 #get 3d coordinates
-def getCoordinate(x, y, camera_depth, cameraInfo):
-    _intrinsics = rs.intrinsics()
-    _intrinsics.width = cameraInfo.width
-    _intrinsics.height = cameraInfo.height
-    _intrinsics.ppx = cameraInfo.K[2]
-    _intrinsics.ppy = cameraInfo.K[5]
-    _intrinsics.fx = cameraInfo.K[0]
-    _intrinsics.fy = cameraInfo.K[4]
-    #_intrinsics.model = cameraInfo.distortion_model
-    _intrinsics.model  = rs.distortion.none
-    #_intrinsics.coeffs = [i for i in cameraInfo.D]
 
-    result = []
-    #result[0]: right, result[1]: down, result[2]: forward
-    return (rs.rs2_deproject_pixel_to_point(intrin=_intrinsics, pixel=[x, y], depth=camera_depth[x][y]))
+depth_enable = False
+def getCoordinate(x, y, camera_depth, cameraInfo):
+    if depth_enable:
+        _intrinsics = rs.intrinsics()
+        _intrinsics.width = cameraInfo.width
+        _intrinsics.height = cameraInfo.height
+        _intrinsics.ppx = cameraInfo.K[2]
+        _intrinsics.ppy = cameraInfo.K[5]
+        _intrinsics.fx = cameraInfo.K[0]
+        _intrinsics.fy = cameraInfo.K[4]
+        #_intrinsics.model = cameraInfo.distortion_model
+        _intrinsics.model  = rs.distortion.none
+        #_intrinsics.coeffs = [i for i in cameraInfo.D]
+
+        result = []
+        #result[0]: right, result[1]: down, result[2]: forward
+        return (rs.rs2_deproject_pixel_to_point(intrin=_intrinsics, pixel=[x, y], depth=camera_depth[x][y]))
+    else:
+        return 0.00
 
 
     
@@ -101,16 +85,16 @@ class Mask_Detection:
         print(model_weights, "loaded.")
         print(model_cfg, "loaded.")
 
-    def detection(self, cv_image, boxes, centers, confidences, class_ids=[]):
+    def detection(self, cv_image, boxes, centers, confidences, class_ids=[], mask_detect=False):
         filtered_boxes = []
         filtered_confidences = []
         filtered_class_ids = []
         filtered_centers = []
+        maskDetected = mask_detect
 
         indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
         if len(indices) > 0:
             numPeople = 0
-            maskDetected = False
             for i in indices.flatten():
                 numPeople += 1
                 x, y, w, h = boxes[i]
@@ -131,7 +115,7 @@ class Mask_Detection:
                         scores = detection[5:]
                         class_id = np.argmax(scores)
                         confidence = scores[class_id]
-                        if confidence > 0.1:
+                        if confidence > 0.5:
                             # Get box Coordinates
                             filtered_boxes.append(boxes[i])
                             filtered_confidences.append(confidences[i])
@@ -139,14 +123,22 @@ class Mask_Detection:
                             filtered_class_ids.append(class_id)
                             if class_id == 1:
                                 maskDetected = True
+                                print("people without mask detected")
+                            if class_id == 0:
+                                maskDetected = False
+                                print("people wear mask")
+
+
+
                             
             #print(numPeople, " people detected.")
             #if maskDetected:
             #    print("people without mask detected")
 
         #show_detected_image(self, cv_image, filtered_boxes, filtered_confidences, filtered_class_ids)
-        return filtered_boxes, filtered_centers, filtered_confidences, filtered_class_ids
-        
+        return maskDetected, filtered_boxes, filtered_centers, filtered_confidences, filtered_class_ids
+
+"""      
 def show_detected_image(self, image, boxes, confidences, class_ids, windowName = "Output"):
         indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
         if len(indices) > 0:
@@ -165,7 +157,8 @@ def show_detected_image(self, image, boxes, confidences, class_ids, windowName =
 
         cv2.imshow(windowName, image)
         cv2.waitKey(3) 
-   
+"""
+
 class Human_Detection:
     def __init__(self) -> None:
         model_weights = os.path.expanduser(rospy.get_param("/mask_detection/human_model_weights"))
@@ -175,11 +168,7 @@ class Human_Detection:
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
         self.classes = ["people"]
-        #with open(model_classname, "r") as file_object:
-        #    for class_name in file_object.readlines():
-        #        class_name = class_name.strip()
-        #        self.classes.append(class_name)
-
+        self.class_id = 0
         print(model_weights, "loaded.")
         print(model_cfg, "loaded.")
 
@@ -216,7 +205,7 @@ class Human_Detection:
                     boxes.append([x, y, w, h])
                     centers.append([c_x, c_y])
                     confidences.append(float(confidence))
-                    class_ids.append(class_id)
+                    class_ids.append(self.class_id)
                     numPeople+=1
 
         #print(numPeople, " people detected")
@@ -266,10 +255,7 @@ class coord_debugger:
                 self.target_y = 0
 
     def getCoord(self):
-        return self.coord_x, self.coord_y
-
-
-    
+        return self.coord_x, self.coord_y   
 
 class Human_Tracking_Node:
     def __init__(self):
@@ -309,6 +295,7 @@ class Human_Tracking_Node:
         self.coord_y = 10
 
         self.track_target = False
+        self.mask_detection_period = 10
         self.target_x = 0
         self.target_y = 0
 
@@ -322,13 +309,6 @@ class Human_Tracking_Node:
         if  self.coord_y < 0:
             self.coord_y = 0
 
-        self.boxes.append([int(self.coord_x), int(self.coord_y), int(self.coord_x)+1, int(self.coord_y)+1])
-        self.centers.append([int(self.coord_x), int(self.coord_y)])
-        self.confidences.append(1)
-        self.class_ids.append(2)
-
-        
-
     def set_target(self, msg):
         if msg.data is True:
             self.track_target = True
@@ -338,16 +318,14 @@ class Human_Tracking_Node:
 
     def getCoord(self):
         return self.coord_x, self.coord_y
+
     #########################################################################################   
     # 
     # 
     #  
     #When there is a new image updated, call this function
     def callback(self, image, depth, camera_info):
-        self.frame += 1
-        if self.frame%20 is 0:
-            print(self.frame," frames received")
-            
+        self.frame += 1     
         try:
             cv_image = self.bridge.compressed_imgmsg_to_cv2(image)
             cv_depth = self.bridge.imgmsg_to_cv2(depth)
@@ -356,23 +334,43 @@ class Human_Tracking_Node:
             print(e)
 
         #detect people and pass people to detect mask
-        self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #detect people without mask 
-        #self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image) #detect only people
+        if (self.frame%15 == 0):
+            #print(self.frame," frames received")
+            #self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #detect people without mask 
+            self.track_target,self.boxes, self.centers, self.confidences, self.class_ids  = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image), self.track_target)
+            if(self.track_target == True):
+                self.Human_Detection.class_id = 1
+            else:
+                self.Human_Detection.class_id = 0
+       
+        else:
+            self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image) #detect only people
         #self.boxes, self.centers, self.confidences, self.class_ids = [],[],[],[] #disable detection
         indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
+        target_detected = False
         if len(indices) > 0:
             for i in indices.flatten():
                 x, y = self.centers[i]
                 result = getCoordinate(y, x, cv_depth, camera_info)
-                print("people coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
+                #print("people coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000),"| class id: ",self.class_ids[i])
                 #publish target coordinates to other node to do furrther function!
-                self.target.linear.x = x
-                self.target.linear.y = y
-                self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
-                self.target_pub.publish(self.target)
+                if(self.track_target):
+                    self.target.linear.x = x
+                    self.target.linear.y = y
+                    self.target.linear.z = 0#float('{0:.3g}'.format(result[2]/1000))
+                    self.target_pub.publish(self.target)
+                    target_detected = True
+                    #print("target detected")
+
+        if target_detected == False:
+            self.target.linear.x = 0
+            self.target.linear.y = 0
+            self.target.linear.z = 0
+            self.target_pub.publish(self.target)
 
         #for test only
-        if self.track_target is True:
+        """
+        if self.track_target is True:         
             self.target_x = int(self.coord_x)
             self.target_y = int(self.coord_y)
             self.track_target = True
@@ -384,21 +382,22 @@ class Human_Tracking_Node:
                 self.target_y = 0
 
             result = getCoordinate(self.target_y, self.target_x, cv_depth, camera_info)
-            print("target coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
+            #print("target coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
             #publish target coordinates to other node to do furrther function!
             self.target.linear.x = self.target_x
             self.target.linear.y = self.target_y
-            self.target.linear.z = float('{0:.3g}'.format(result[2]/1000))
+            self.target.linear.z = 0#float('{0:.3g}'.format(result[2]/1000))
             self.target_pub.publish(self.target)
+        """
+        #result = getCoordinate(int(self.coord_y), int(self.coord_x), cv_depth, camera_info)
+        #print("test point: x: ", int(self.coord_x), " | y: ", int(self.coord_y))
+        #print("test coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
 
-        result = getCoordinate(int(self.coord_y), int(self.coord_x), cv_depth, camera_info)
-        print("test point: x: ", int(self.coord_x), " | y: ", int(self.coord_y))
-        print("test coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
-
-        self.boxes.append([int(self.coord_x), int(self.coord_y), int(self.coord_x)+1, int(self.coord_y)+1])
-        self.centers.append([int(self.coord_x), int(self.coord_y)])
-        self.confidences.append(1)
-        self.class_ids.append(2)
+        #test point
+        #self.boxes.append([int(self.coord_x), int(self.coord_y), int(self.coord_x)+1, int(self.coord_y)+1])
+        #self.centers.append([int(self.coord_x), int(self.coord_y)])
+        #self.confidences.append(1)
+        #self.class_ids.append(2)
 
 
     #publish bounding boxes, draw_boxes.py will receive the data and display the image with bounding box.
