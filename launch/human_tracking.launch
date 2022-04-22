@@ -2,7 +2,7 @@
     <arg name="image_size_height" value="480"/>
     <arg name="image_size_width" value="640"/>
 
-    <node pkg="human_tracking" name="offboard" type="offb_mode" output="screen">
+    <node pkg="human_tracking" name="offb_node" type="offb_mode" output="screen">
         <param name="image_size_height" value="$(arg image_size_height)"/>
         <param name="image_size_width" value="$(arg image_size_width)"/>
     </node>
