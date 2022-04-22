@@ -1,7 +1,24 @@
 <launch>
+
+    <arg name="human_model_weights" value="~/catkin_ws/src/human_tracking/config/human_yolov4.weights"/>
+    <arg name="human_model_cfg" value="~/catkin_ws/src/human_tracking/config/human_yolov4-custom.cfg"/>
+    <arg name="human_model_classname" value="~/catkin_ws/src/human_tracking/config/human_classes.txt"/>
+
+    <arg name="mask_model_weights" value="~/catkin_ws/src/human_tracking/config/mask_yolov4-obj_final.weights"/>
+    <arg name="mask_model_cfg" value="~/catkin_ws/src/human_tracking/config/mask_yolov4-custom.cfg"/>
+    <arg name="mask_model_classname" value="~/catkin_ws/src/human_tracking/config/mask_classes.txt"/>
+
     <node pkg="human_tracking" name="user_control" type="user_control.py" output="screen">
         <param name="color_topic" value="/camera/color/image_raw/compressed"/>
         <param name="depth_topic" value="/camera/aligned_depth_to_color/image_raw"/>
         <param name="depth_camera_info" value="/camera/aligned_depth_to_color/camera_info"/>
+
+        <param name="human_model_weights" value="$(arg human_model_weights)"/>
+        <param name="human_model_cfg" value="$(arg human_model_cfg)"/>
+        <param name="human_model_classname" value="$(arg human_model_classname)"/>
+
+        <param name="mask_model_weights" value="$(arg mask_model_weights)"/>
+        <param name="mask_model_cfg" value="$(arg mask_model_cfg)"/>
+        <param name="mask_model_classname" value="$(arg mask_model_classname)"/>
     </node>
 </launch>

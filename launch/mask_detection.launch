@@ -22,7 +22,4 @@
         <param name="mask_model_classname" value="$(arg mask_model_classname)"/>
     </node>
 
-    <node pkg="human_tracking" name="show_image" type="draw_boxes.py" output="screen">   
-        
-    </node>
 </launch>

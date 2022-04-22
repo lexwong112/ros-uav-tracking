@@ -2,28 +2,43 @@
 from __future__ import print_function
 from sqlite3 import Time
 
-import numpy as np
-from logging import Logger
-
+#import ros message lib
 import roslib
 from std_msgs.msg import String
+from std_msgs.msg import Bool
+
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import CameraInfo
-from std_msgs.msg import Bool
+
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped
 
+from mavros_msgs.msg import State
+
+#ros lib
 import rospy
-import sys
+import message_filters
 
-import glob
+#system
+import sys
 import os
 
+#opencv lib
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
-import numpy as np
 import pyrealsense2 as rs
-import message_filters
+
+#tkinter for GUI
+import tkinter as tk
+import tkinter.font as tkFont
+from PIL import Image, ImageTk
+
+#common lib
+import numpy as np
+from ast import literal_eval
+import time
+from playsound import playsound
 
 roslib.load_manifest('human_tracking')
 
@@ -31,19 +46,7 @@ print("OpenCV Version: ", cv2.__version__)
 
 detection_flag = True
 
-def remove_prefix(text, prefix):
-    if text.startswith(prefix):
-        return text[len(prefix):]
-
-
-def remove_suffix(text, prefix):
-    if text.endswith(prefix):
-        return text[:len(text) - len(prefix)]
-
-import struct
-
 #get 3d coordinates
-
 depth_enable = False
 def getCoordinate(x, y, camera_depth, cameraInfo):
     if depth_enable:
@@ -64,23 +67,22 @@ def getCoordinate(x, y, camera_depth, cameraInfo):
     else:
         return 0.00
 
-
-    
-
 class Mask_Detection:
     def __init__(self) -> None:
+        #load mask detection model and config file
         model_weights = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_weights"))
         model_cfg = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_cfg"))
-        model_classname = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_classname"))
+        #model_classname = os.path.expanduser(rospy.get_param("/mask_detection/mask_model_classname"))
 
+        #initial darknet for yolo
         self.net = cv2.dnn.readNetFromDarknet(model_cfg, model_weights)
+
+        #use gpu improve performance 
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+
+        #label of result
         self.classes = ["with mask", "without mask"]
-        #with open(model_classname, "r") as file_object:
-        #    for class_name in file_object.readlines():
-        #        class_name = class_name.strip()
-        #        self.classes.append(class_name)
 
         print(model_weights, "loaded.")
         print(model_cfg, "loaded.")
@@ -128,47 +130,27 @@ class Mask_Detection:
                                 maskDetected = False
                                 print("people wear mask")
 
-
-
-                            
-            #print(numPeople, " people detected.")
-            #if maskDetected:
-            #    print("people without mask detected")
-
-        #show_detected_image(self, cv_image, filtered_boxes, filtered_confidences, filtered_class_ids)
         return maskDetected, filtered_boxes, filtered_centers, filtered_confidences, filtered_class_ids
 
-"""      
-def show_detected_image(self, image, boxes, confidences, class_ids, windowName = "Output"):
-        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
-        if len(indices) > 0:
-            for i in indices.flatten():
-                #get coordinates
-                (x, y) = (boxes[i][0], boxes[i][1])
-                (w, h) = (boxes[i][2], boxes[i][3])
-                #darw bounding box
-                color = (255, 1, 12)#[int(c) for c in COLORS[class_ids[i]]]
-                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2, lineType=cv2.LINE_AA)             
-                #put text
-                text = "{}: {:.2f}".format(self.classes[class_ids[i]], confidences[i])
-                
-                cv2.rectangle(image, (x, y-28), (x + w, y), (255,255,255), -1)
-                cv2.putText(image, text, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 1, lineType=cv2.LINE_AA)
-
-        cv2.imshow(windowName, image)
-        cv2.waitKey(3) 
-"""
 
 class Human_Detection:
     def __init__(self) -> None:
+        #load human detection model and config file
         model_weights = os.path.expanduser(rospy.get_param("/mask_detection/human_model_weights"))
         model_cfg = os.path.expanduser(rospy.get_param("/mask_detection/human_model_cfg"))
-        model_classname = os.path.expanduser(rospy.get_param("/mask_detection/human_model_classname"))
+        #model_classname = os.path.expanduser(rospy.get_param("/mask_detection/human_model_classname"))
+
+        #initial darknet for yolo
         self.net = cv2.dnn.readNetFromDarknet(model_cfg, model_weights)
+
+        #use gpu to improve performance
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+
+        #label of result
         self.classes = ["people"]
         self.class_id = 0
+
         print(model_weights, "loaded.")
         print(model_cfg, "loaded.")
 
@@ -185,7 +167,7 @@ class Human_Detection:
 
         self.net.setInput(blob)
         outs = self.net.forward(output_layers)
-        numPeople = 0
+
         for out in outs:
             for detection in out:
                 scores = detection[5:]
@@ -206,203 +188,116 @@ class Human_Detection:
                     centers.append([c_x, c_y])
                     confidences.append(float(confidence))
                     class_ids.append(self.class_id)
-                    numPeople+=1
 
-        #print(numPeople, " people detected")
-
-        
         return boxes, centers, confidences, class_ids
-
-#not finish
-class Camera:
-    def __init__(self):
-        self.topic_color_image = ""
-        self.topic_depth_image = ""
-        self.topic_depth_info = ""
-
-class coord_debugger:
-    def __init__(self):
-        self.coord_sub = rospy.Subscriber("/test_coord", Twist, self.test_coord)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        self.coord_sub = rospy.Subscriber("/track_btn", Bool, self.set_target)
-        self.coord_x = 10
-        self.coord_y = 10
-
-        self.track_target = False
-        self.target_x = 0
-        self.target_y = 0
-
-    def test_coord(self, msg):
-        self.coord_x -= msg.angular.z
-        self.coord_y -= msg.linear.x
-
-        if  self.coord_x < 0:
-            self.coord_x = 0
-
-        if  self.coord_y < 0:
-            self.coord_y = 0
-
-    def set_target(self, msg):
-        if msg.data is True:
-
-            self.target_x = int(self.coord_x)
-            self.target_y = int(self.coord_y)
-            self.track_target = True
-            print("target: ",self.target_x, "  |  ", self.target_y)
-            if  self.target_x < 0:
-                self.target_x = 0
-
-            if  self.target_y < 0:
-                self.target_y = 0
-
-    def getCoord(self):
-        return self.coord_x, self.coord_y   
 
 class Human_Tracking_Node:
     def __init__(self):
         self.bridge = CvBridge()
+
+        #create object of mask and human detection class
         self.Mask_Detection = Mask_Detection()
         self.Human_Detection = Human_Detection()
 
         #color_topic = rospy.get_param("/mask_detection/color_topic")
-        self.image_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/color_topic"), CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        self.depth_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_topic"), Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
-        self.camera_info = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_camera_info"), CameraInfo)
+        #self.image_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/color_topic"), CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
+        #self.depth_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_topic"), Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
+        #self.camera_info = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_camera_info"), CameraInfo)
 
+        #publish detection result to user control GUI
         self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
 
-        self.target_pub = rospy.Publisher("/human_tracking/mask_detection/target", Twist, queue_size=10)
+        #publish fps
+        self.fps_pub = rospy.Publisher("/human_tracking/mask_detection/fps", String, queue_size=10)
 
+        #publish target position
+        self.target_pub = rospy.Publisher("/human_tracking/mask_detection/target", Twist, queue_size=10)
         self.target = Twist()
 
         self.rate = 1
 
         #sync three topic
-        self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 10, 10)
-        self.timeSync.registerCallback(self.callback)
+        #self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 10, 10)
+        #self.timeSync.registerCallback(self.callback)
 
+        #get image from camera
+        rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.callback, queue_size=1)
+
+        #store detection result
         self.boxes = []
         self.centers = []
         self.confidences = []
         self.class_ids = []
 
+
+        self.fps = np.zeros(30)
+        self.avg_fps = 0
         self.frame = 0
-        
-        #self.debugger = coord_debugger()
-        #For Test Only#######################################################################################
-        self.coord_sub = rospy.Subscriber("/test_coord", Twist, self.test_coord)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        self.track_btn_sub = rospy.Subscriber("/track_btn", Bool, self.set_target)
-        self.coord_x = 10
-        self.coord_y = 10
-
         self.track_target = False
-        self.mask_detection_period = 10
-        self.target_x = 0
-        self.target_y = 0
+        self.mask_detection_period = 15
 
-    def test_coord(self, msg):
-        self.coord_x -= msg.angular.z
-        self.coord_y -= msg.linear.x
-
-        if  self.coord_x < 0:
-            self.coord_x = 0
-
-        if  self.coord_y < 0:
-            self.coord_y = 0
-
-    def set_target(self, msg):
-        if msg.data is True:
-            self.track_target = True
-        else:
-            self.track_target = False
-            
-
-    def getCoord(self):
-        return self.coord_x, self.coord_y
-
-    #########################################################################################   
-    # 
-    # 
-    #  
     #When there is a new image updated, call this function
-    def callback(self, image, depth, camera_info):
+    def callback(self, image):
+        if(self.frame > 3600):
+            self.frame=0
         self.frame += 1     
+
         try:
+            #convert ros compressed image message to cv2 image
             cv_image = self.bridge.compressed_imgmsg_to_cv2(image)
-            cv_depth = self.bridge.imgmsg_to_cv2(depth)
+            #cv_depth = self.bridge.imgmsg_to_cv2(depth)
 
         except CvBridgeError as e:
             print(e)
 
-        #detect people and pass people to detect mask
-        if (self.frame%15 == 0):
-            #print(self.frame," frames received")
-            #self.boxes, self.centers, self.confidences, self.class_ids = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image)) #detect people without mask 
+        start_time = time.time()
+        #detection for this frame#####################################
+        if (self.frame%self.mask_detection_period == 0):
+            #detect mask with a period to reduce the use of computing resources
             self.track_target,self.boxes, self.centers, self.confidences, self.class_ids  = self.Mask_Detection.detection(cv_image, *self.Human_Detection.detection(cv_image), self.track_target)
+            
+            #if people without mask detected, change label of people detection
             if(self.track_target == True):
                 self.Human_Detection.class_id = 1
             else:
                 self.Human_Detection.class_id = 0
-       
         else:
-            self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image) #detect only people
-        #self.boxes, self.centers, self.confidences, self.class_ids = [],[],[],[] #disable detection
+            #detect only people
+            self.boxes, self.centers, self.confidences, self.class_ids = self.Human_Detection.detection(cv_image)
+        ##############################################################
+        #get fps
+        end_time = time.time()
+        self.fps[self.frame%30] = 1/(end_time-start_time)
+        for x in range(30):
+                self.avg_fps += self.fps[x]
+        self.avg_fps = self.avg_fps/30
+
+        #publish detection result and performance
+        self.output_pub.publish(str(self.boxes)+'|'+str(self.confidences)+'|'+str(self.class_ids))      
+        self.fps_pub.publish(str("{:.2f}".format(self.avg_fps)))
+
+        #filtering detection result
         indices = cv2.dnn.NMSBoxes(self.boxes, self.confidences, 0.5, 0.4)
         target_detected = False
         if len(indices) > 0:
             for i in indices.flatten():
                 x, y = self.centers[i]
-                result = getCoordinate(y, x, cv_depth, camera_info)
-                #print("people coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000),"| class id: ",self.class_ids[i])
-                #publish target coordinates to other node to do furrther function!
+
+                #if people without mask detected, tracking that people
                 if(self.track_target):
                     self.target.linear.x = x
-                    self.target.linear.y = y
-                    self.target.linear.z = 0#float('{0:.3g}'.format(result[2]/1000))
+                    self.target.linear.y = self.boxes[i][3]
+                    self.target.linear.z = 0
                     self.target_pub.publish(self.target)
                     target_detected = True
-                    #print("target detected")
 
+        #if people without mask detected but people out of camera, send 0 to notity offboard mode to find that people
+        #if tracked people wear mask detected, send 0 to stop tracking
         if target_detected == False:
             self.target.linear.x = 0
             self.target.linear.y = 0
             self.target.linear.z = 0
             self.target_pub.publish(self.target)
-
-        #for test only
-        """
-        if self.track_target is True:         
-            self.target_x = int(self.coord_x)
-            self.target_y = int(self.coord_y)
-            self.track_target = True
-            print("target: ",self.target_x, "  |  ", self.target_y)
-            if  self.target_x < 0:
-                self.target_x = 0
-
-            if  self.target_y < 0:
-                self.target_y = 0
-
-            result = getCoordinate(self.target_y, self.target_x, cv_depth, camera_info)
-            #print("target coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
-            #publish target coordinates to other node to do furrther function!
-            self.target.linear.x = self.target_x
-            self.target.linear.y = self.target_y
-            self.target.linear.z = 0#float('{0:.3g}'.format(result[2]/1000))
-            self.target_pub.publish(self.target)
-        """
-        #result = getCoordinate(int(self.coord_y), int(self.coord_x), cv_depth, camera_info)
-        #print("test point: x: ", int(self.coord_x), " | y: ", int(self.coord_y))
-        #print("test coordinates: ", '{0:.3g}'.format(result[0]/1000), '{0:.3g}'.format(result[1]/1000), '{0:.3g}'.format(result[2]/1000))
-
-        #test point
-        #self.boxes.append([int(self.coord_x), int(self.coord_y), int(self.coord_x)+1, int(self.coord_y)+1])
-        #self.centers.append([int(self.coord_x), int(self.coord_y)])
-        #self.confidences.append(1)
-        #self.class_ids.append(2)
-
-
-    #publish bounding boxes, draw_boxes.py will receive the data and display the image with bounding box.
-    def boxesPublisher(self):
-        self.output_pub.publish(str(self.boxes)+'|'+str(self.confidences)+'|'+str(self.class_ids))
 
 def main(args):
     #create a ros node name "human_tracking"
@@ -416,12 +311,7 @@ def main(args):
 
     #rospy.spin()
     while not rospy.is_shutdown():
-        tracking.boxesPublisher()
-        #rospy.spinOnce()
         rospy.sleep(rospy.Rate)
-
-    cv2.destroyAllWindows()
-
 
 if __name__ == '__main__':
     main(sys.argv)
