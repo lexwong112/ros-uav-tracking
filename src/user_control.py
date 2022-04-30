@@ -44,7 +44,7 @@ rospy.init_node('user_control', anonymous=True)
 
 #mask detection output format
 fmt = "{:10}{:15}{:15}{:20}"
-
+pi=3.14159
 #show image and draw detection result 
 class boxes_drawer:
     def __init__(self):
@@ -64,6 +64,7 @@ class boxes_drawer:
         #alert period
         self.last_time = time.time()
 
+        #display detection performance(show fps)
         self.fps = "0"
 
 
@@ -203,6 +204,8 @@ class flight_control:
         self.isArmed = False
         self.flight_mode = "manual"
 
+        self.current_angle = -1.00
+
         #get mavros state
         self.mavros_state_sub = rospy.Subscriber("/mavros/state", State, self.mavros_state)
 
@@ -215,12 +218,22 @@ class flight_control:
         #set flight mode for offboard mode program (offb_mode.cpp)
         self.mavros_mode_pub = rospy.Publisher("/user_control/set_mode", String, queue_size=10)
 
+        self.target_coordinates_sub = rospy.Subscriber("/human_tracking/mask_detection/target/coordinates", Twist, self.coordinates_transfrom)
+
+    def coordinates_transfrom(self, msg):
+        transform_matrix = np.array([[np.cos(self.current_angle*(pi/180)),np.sin(self.current_angle*(pi/180))],[-np.sin(self.current_angle*(pi/180)),np.cos(self.current_angle*(pi/180))]])
+        target_coordinates = np.array([msg.linear.x,msg.linear.y])
+        transformed_coordinates = target_coordinates.dot(transform_matrix)
+        target_x_label["text"]="{:.12f}".format(transformed_coordinates[0])
+        target_y_label["text"]="{:.12f}".format(transformed_coordinates[1])
 
     def getTarget(self, msg):
         #update to GUI
-        target_x_label["text"]="{:.12f}".format(msg.linear.x)
-        target_y_label["text"]="{:.12f}".format(msg.linear.y)
-        target_z_label["text"]="{:.12f}".format(msg.linear.z)
+        #target_x_label["text"]="{:.12f}".format(msg.linear.x)
+        #target_y_label["text"]="{:.12f}".format(msg.linear.y)
+        #target_z_label["text"]="{:.12f}".format(msg.linear.z)
+        pass
+
 
 
     def mavros_state(self, state):
@@ -254,6 +267,22 @@ class flight_control:
         current_x_label["text"] = "{:.12f}".format(msg.pose.position.x)
         current_y_label["text"] = "{:.12f}".format(msg.pose.position.y)
         current_z_label["text"] = "{:.12f}".format(msg.pose.position.z)
+        z = msg.pose.orientation.z
+        w = msg.pose.orientation.w
+        if(z>0 and w>0):
+            self.current_angle =(np.arcsin(z)+np.arccos(w))*(180/pi)
+            current_orientation_label["text"]="{:.2f}".format(self.current_angle)
+        elif(z>0 and w<0):
+            self.current_angle =(np.arccos(z)+np.arccos(w))*(180/pi)+90
+            current_orientation_label["text"]="{:.2f}".format(self.current_angle)
+        elif(z<0 and w<0):
+            self.current_angle =(np.arccos(z)+np.arcsin(w))*(180/pi)
+            current_orientation_label["text"]="{:.2f}".format(self.current_angle)
+        elif(z<1 and w>0):
+            self.current_angle =450-(np.arccos(z)+np.arccos(w))*(180/pi)
+            current_orientation_label["text"]="{:.2f}".format(self.current_angle)
+
+       
 
     def set_mode(self, mode):
         #publish mode to offboard mode
@@ -394,19 +423,26 @@ label.grid(row=1, column=0)
 label = tk.Label(current_pose_frame, text="        Z:    ")
 label.grid(row=2, column=0)
 
-current_x_label = tk.Label(current_pose_frame, text="0")
+current_x_label = tk.Label(current_pose_frame, text="0.000000000")
 current_x_label["bg"]="white"
 current_x_label["justify"]="left"
 current_x_label.grid(row=0, column=1)
-current_y_label = tk.Label(current_pose_frame, text="0")
+current_y_label = tk.Label(current_pose_frame, text="0.000000000")
 current_y_label["bg"]="white"
 current_y_label["justify"]="left"
 current_y_label.grid(row=1, column=1)
-current_z_label = tk.Label(current_pose_frame, text="0")
+current_z_label = tk.Label(current_pose_frame, text="0.000000000")
 current_z_label["bg"]="white"
 current_z_label["justify"]="left"
 current_z_label.grid(row=2, column=1)
 
+label = tk.Label(current_pose_frame, text="Orentation")
+label["justify"]="center"
+label.grid(row=0, column=2, padx=20)
+current_orientation_label = tk.Label(current_pose_frame, text="-")
+current_orientation_label["bg"]="white"
+current_orientation_label["justify"]="center"
+current_orientation_label.grid(row=1,column=2,padx=20)
 #########################################################
 
 #show current mission####################################

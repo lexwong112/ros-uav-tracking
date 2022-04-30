@@ -29,11 +29,6 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 import pyrealsense2 as rs
 
-#tkinter for GUI
-import tkinter as tk
-import tkinter.font as tkFont
-from PIL import Image, ImageTk
-
 #common lib
 import numpy as np
 from ast import literal_eval
@@ -45,10 +40,13 @@ roslib.load_manifest('human_tracking')
 print("OpenCV Version: ", cv2.__version__)
 
 detection_flag = True
+pi=3.14159
+image_width = 640
+image_height = 360
 
-#get 3d coordinates
-depth_enable = False
-def getCoordinate(x, y, camera_depth, cameraInfo):
+#get 3d coordinates use realsense function
+depth_enable = True
+def getCoordinates(x, y, camera_depth, cameraInfo):
     if depth_enable:
         _intrinsics = rs.intrinsics()
         _intrinsics.width = cameraInfo.width
@@ -66,6 +64,32 @@ def getCoordinate(x, y, camera_depth, cameraInfo):
         return (rs.rs2_deproject_pixel_to_point(intrin=_intrinsics, pixel=[x, y], depth=camera_depth[x][y]))
     else:
         return 0.00
+
+#install with 45 degree, custom function, get coordinates from pixels position of image
+def getCoordinate(x, y, distance, id=0):
+    if(y>image_width/2):
+        angle_y = ((y-(image_width/2))/(image_width/2))*45
+    elif(y<image_width/2):
+        angle_y = -(y/(image_width/2))*45
+    elif(y==image_width/2):
+        angle_y=0
+
+    if(x>image_height/2):
+        angle_x = 45-((x-image_height/2)/(image_height/2))*32.5
+    elif(x<image_height/2):
+        angle_x = 45+(x/image_height/2)*32.5
+    elif(x==image_height/2):
+        angle_x=0
+
+    target_y=distance*np.sin(angle_y*(pi/180))
+    projected_distance = distance*np.sin(angle_x*(pi/180))
+    target_x=np.sqrt((projected_distance*projected_distance) - (target_y*target_y))
+
+    print("target position ID: ", id,"\nx: ",target_x,"\ny: ",target_y,"\ndistance: ",distance,"\nAngle y: ", angle_y, "\nAngle x: ",angle_x, "\n")
+    #for test
+    print("center x: ", x,"\ncenter y: ",y)
+    return target_x, target_y
+
 
 class Mask_Detection:
     def __init__(self) -> None:
@@ -125,10 +149,10 @@ class Mask_Detection:
                             filtered_class_ids.append(class_id)
                             if class_id == 1:
                                 maskDetected = True
-                                print("people without mask detected")
+                                #print("people without mask detected")
                             if class_id == 0:
                                 maskDetected = False
-                                print("people wear mask")
+                                #print("people wear mask")
 
         return maskDetected, filtered_boxes, filtered_centers, filtered_confidences, filtered_class_ids
 
@@ -153,6 +177,7 @@ class Human_Detection:
 
         print(model_weights, "loaded.")
         print(model_cfg, "loaded.")
+
 
     def detection(self, cv_image):
         confidences = []
@@ -200,9 +225,9 @@ class Human_Tracking_Node:
         self.Human_Detection = Human_Detection()
 
         #color_topic = rospy.get_param("/mask_detection/color_topic")
-        #self.image_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/color_topic"), CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
-        #self.depth_sub = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_topic"), Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
-        #self.camera_info = message_filters.Subscriber(rospy.get_param("/mask_detection/depth_camera_info"), CameraInfo)
+        self.image_sub = message_filters.Subscriber("/camera/color/image_raw/compressed", CompressedImage)#rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.color_callback, queue_size=1)
+        self.depth_sub = message_filters.Subscriber("/camera/depth_aligned_to_color_and_infra1/image_raw", Image)#rospy.Subscriber("/camera/depth/image_rect_raw/compressed", CompressedImage, self.depth_callback, queue_size=1)
+        self.camera_info = message_filters.Subscriber("/camera/depth_aligned_to_color_and_infra1/camera_info", CameraInfo)
 
         #publish detection result to user control GUI
         self.output_pub = rospy.Publisher("/human_tracking/mask_detection/boxes", String, queue_size=10)
@@ -214,14 +239,18 @@ class Human_Tracking_Node:
         self.target_pub = rospy.Publisher("/human_tracking/mask_detection/target", Twist, queue_size=10)
         self.target = Twist()
 
+        #publish target coordinates base on uav.
+        self.target_coordinates_pub = rospy.Publisher("/human_tracking/mask_detection/target/coordinates", Twist, queue_size=10)
+        self.target_coordinates = Twist()
+
         self.rate = 1
 
         #sync three topic
-        #self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 10, 10)
-        #self.timeSync.registerCallback(self.callback)
+        self.timeSync = message_filters.ApproximateTimeSynchronizer([self.image_sub, self.depth_sub, self.camera_info], 10, 10)
+        self.timeSync.registerCallback(self.callback)
 
         #get image from camera
-        rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.callback, queue_size=1)
+        #rospy.Subscriber("/camera/color/image_raw/compressed", CompressedImage, self.callback, queue_size=1)
 
         #store detection result
         self.boxes = []
@@ -236,8 +265,26 @@ class Human_Tracking_Node:
         self.track_target = False
         self.mask_detection_period = 15
 
+    #get angle of target from image
+    def getAngle(self, x, y):
+        if(y>image_width/2):
+            angle_y = (y/image_width)*45
+        elif(y<image_width/2):
+            angle_y = -(y/image_width)*45
+        elif(y==image_width/2):
+            angle_y=0
+
+        if(x>image_height/2):
+            angle_x = 45-(x/image_height)*32.5
+        elif(x<image_height/2):
+            angle_x = 45+(x/image_height)*45
+        elif(x==image_height/2):
+            angle_x=0
+        
+        return angle_x, angle_y
+
     #When there is a new image updated, call this function
-    def callback(self, image):
+    def callback(self, image, depth, camera_info):
         if(self.frame > 3600):
             self.frame=0
         self.frame += 1     
@@ -245,7 +292,7 @@ class Human_Tracking_Node:
         try:
             #convert ros compressed image message to cv2 image
             cv_image = self.bridge.compressed_imgmsg_to_cv2(image)
-            #cv_depth = self.bridge.imgmsg_to_cv2(depth)
+            cv_depth = self.bridge.imgmsg_to_cv2(depth)
 
         except CvBridgeError as e:
             print(e)
@@ -282,6 +329,13 @@ class Human_Tracking_Node:
         if len(indices) > 0:
             for i in indices.flatten():
                 x, y = self.centers[i]
+
+                angle_x, angle_y = self.getAngle(x, y)
+                result = getCoordinates(y, x, cv_depth, camera_info)
+                distance = result[2]/1000#float('{0:.3g}'.format(cv_depth[y][x]/1000))
+                self.target_coordinates.linear.x, self.target_coordinates.linear.y = getCoordinate(y,x, distance)
+                self.target_coordinates.linear.z = 0
+                self.target_coordinates_pub.publish(self.target_coordinates)
 
                 #if people without mask detected, tracking that people
                 if(self.track_target):

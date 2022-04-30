@@ -10,8 +10,8 @@
 
     <node pkg="human_tracking" name="user_control" type="user_control.py" output="screen">
         <param name="color_topic" value="/camera/color/image_raw/compressed"/>
-        <param name="depth_topic" value="/camera/aligned_depth_to_color/image_raw"/>
-        <param name="depth_camera_info" value="/camera/aligned_depth_to_color/camera_info"/>
+        <param name="depth_topic" value="/camera/depth_aligned_to_color_and_infra1/image_raw/compressed"/>
+        <param name="depth_camera_info" value="/camera/depth_aligned_to_color_and_infra1/camera_info"/>
 
         <param name="human_model_weights" value="$(arg human_model_weights)"/>
         <param name="human_model_cfg" value="$(arg human_model_cfg)"/>

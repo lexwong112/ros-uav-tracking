@@ -248,8 +248,8 @@ int main(int argc, char **argv)
     }
 
     //flight high level
-    pose.pose.position.z = 2.5;
-    task_one_set_point.pose.position.z = 2.5;
+    pose.pose.position.z = 5;//Carefully set this values, No more than 2.8 in reailty.!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    task_one_set_point.pose.position.z = 5;
 
     mavros_msgs::SetMode offb_set_mode;
     offb_set_mode.request.custom_mode = "OFFBOARD";
