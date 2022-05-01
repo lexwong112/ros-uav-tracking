@@ -157,6 +157,13 @@ void getMode(const std_msgs::String mode)
     {
         flight_mode=velocity_mode;
     }
+    else if(mode.data=="onboard")
+    {
+        setVelocity.twist.angular.x = 0;
+        setVelocity.twist.angular.y = 0;
+        setVelocity.twist.angular.z = 0;
+        flight_mode=manual_control;
+    }
 }
 
 //Find the shortest distance to resume task 1
@@ -349,7 +356,9 @@ int main(int argc, char **argv)
                 }
                 
                 break;
-            
+            case manual_control:
+                velocity_pub.publish(setVelocity);
+                break;
             default:
                 break;
         }

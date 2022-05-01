@@ -78,6 +78,9 @@ class boxes_drawer:
         #get detection fps
         self.fps_sub = rospy.Subscriber("/human_tracking/mask_detection/fps", String, self.getFPS)
 
+        #get detection fps
+        self.message_sub = rospy.Subscriber("/user_control/message", String, self.getMessage)
+
         #listen alert event
         self.sound_sub = rospy.Subscriber("/user_control/play_sound", String, self.playSound)
 
@@ -86,6 +89,10 @@ class boxes_drawer:
 
     def getFPS(self, msg):
         self.fps = msg.data
+
+    def getMessage(self, msg):
+        mission_state_label["text"] = msg.data
+        pass
 
     def playSound(self, msg):
         #play alert sound effect
@@ -205,6 +212,8 @@ class flight_control:
         self.flight_mode = "manual"
 
         self.current_angle = -1.00
+        self.current_x = 0.00
+        self.current_y = 0.00
 
         #get mavros state
         self.mavros_state_sub = rospy.Subscriber("/mavros/state", State, self.mavros_state)
@@ -221,11 +230,12 @@ class flight_control:
         self.target_coordinates_sub = rospy.Subscriber("/human_tracking/mask_detection/target/coordinates", Twist, self.coordinates_transfrom)
 
     def coordinates_transfrom(self, msg):
-        transform_matrix = np.array([[np.cos(self.current_angle*(pi/180)),np.sin(self.current_angle*(pi/180))],[-np.sin(self.current_angle*(pi/180)),np.cos(self.current_angle*(pi/180))]])
-        target_coordinates = np.array([msg.linear.x,msg.linear.y])
-        transformed_coordinates = target_coordinates.dot(transform_matrix)
-        target_x_label["text"]="{:.12f}".format(transformed_coordinates[0])
-        target_y_label["text"]="{:.12f}".format(transformed_coordinates[1])
+        target_x = msg.linear.x
+        target_y = msg.linear.y
+        transformed_x = self.current_x + target_x*np.cos((self.current_angle)*(pi/180))-target_y*np.sin((self.current_angle)*(pi/180))
+        transformed_y = self.current_y + target_x*np.sin((self.current_angle)*(pi/180))+target_y*np.cos((self.current_angle)*(pi/180))
+        target_x_label["text"]="{:.12f}".format(transformed_x)
+        target_y_label["text"]="{:.12f}".format(transformed_y)
 
     def getTarget(self, msg):
         #update to GUI
@@ -267,6 +277,8 @@ class flight_control:
         current_x_label["text"] = "{:.12f}".format(msg.pose.position.x)
         current_y_label["text"] = "{:.12f}".format(msg.pose.position.y)
         current_z_label["text"] = "{:.12f}".format(msg.pose.position.z)
+        self.current_x = msg.pose.position.x
+        self.current_y = msg.pose.position.y
         z = msg.pose.orientation.z
         w = msg.pose.orientation.w
         if(z>0 and w>0):
@@ -344,7 +356,7 @@ def setFlightMode(mode = 0):
             os.system("gnome-terminal -- roslaunch human_tracking human_tracking.launch")
 
     elif(mode == 1):
-        print("Flight mode set to offboard mode")
+        flightControl.set_mode("onboard")
     elif(mode == 2):
         print("Flight mode set to Position mode")
     elif(mode == 3):
@@ -447,7 +459,7 @@ current_orientation_label.grid(row=1,column=2,padx=20)
 
 #show current mission####################################
 mission_frame=tk.LabelFrame(root, text="Message")
-mission_frame.place(x=680, y=390, height=55, width=300)
+mission_frame.place(x=680, y=390, height=300, width=300)
 
 mission_state_label=tk.Label(mission_frame, text="Land")
 mission_state_label["bg"]="white"

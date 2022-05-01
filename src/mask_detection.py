@@ -70,18 +70,19 @@ def getCoordinate(x, y, distance, id=0):
     if(y>image_width/2):
         angle_y = ((y-(image_width/2))/(image_width/2))*45
     elif(y<image_width/2):
-        angle_y = -(y/(image_width/2))*45
+        angle_y = -(((image_width/2)-y)/(image_width/2))*45
     elif(y==image_width/2):
         angle_y=0
 
     if(x>image_height/2):
         angle_x = 45-((x-image_height/2)/(image_height/2))*32.5
     elif(x<image_height/2):
-        angle_x = 45+(x/image_height/2)*32.5
+        angle_x = 45+(x/(image_height/2))*32.5
     elif(x==image_height/2):
         angle_x=0
 
-    target_y=distance*np.sin(angle_y*(pi/180))
+    #minus to change axis direction
+    target_y=-distance*np.sin(angle_y*(pi/180))
     projected_distance = distance*np.sin(angle_x*(pi/180))
     target_x=np.sqrt((projected_distance*projected_distance) - (target_y*target_y))
 
@@ -243,6 +244,9 @@ class Human_Tracking_Node:
         self.target_coordinates_pub = rospy.Publisher("/human_tracking/mask_detection/target/coordinates", Twist, queue_size=10)
         self.target_coordinates = Twist()
 
+        #publish message to user control GUI
+        self.message_pub = rospy.Publisher("/user_control/message", String, queue_size=10)
+
         self.rate = 1
 
         #sync three topic
@@ -336,7 +340,7 @@ class Human_Tracking_Node:
                 self.target_coordinates.linear.x, self.target_coordinates.linear.y = getCoordinate(y,x, distance)
                 self.target_coordinates.linear.z = 0
                 self.target_coordinates_pub.publish(self.target_coordinates)
-
+                self.message_pub.publish("Target base on UAV coordinates:\n"+str("x: {:.3f}\n".format(self.target_coordinates.linear.x))+str("y: {:.3f}\n".format(self.target_coordinates.linear.x)))
                 #if people without mask detected, tracking that people
                 if(self.track_target):
                     self.target.linear.x = x
