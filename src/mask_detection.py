@@ -154,8 +154,18 @@ class Mask_Detection:
                             if class_id == 0:
                                 maskDetected = False
                                 #print("people wear mask")
-
-        return maskDetected, filtered_boxes, filtered_centers, filtered_confidences, filtered_class_ids
+        iboxes=[]
+        icenters=[]
+        iconfidences=[]
+        ids=[]
+        indices = cv2.dnn.NMSBoxes(filtered_boxes, filtered_confidences, 0.5, 0.4)
+        if len(indices) > 0:
+            for i in indices.flatten():
+                iboxes.append(filtered_boxes[i])
+                icenters.append(filtered_centers[i])
+                iconfidences.append(filtered_confidences[i])
+                ids.append(filtered_class_ids[i])             
+        return maskDetected, iboxes, icenters, iconfidences, ids
 
 
 class Human_Detection:
@@ -215,7 +225,18 @@ class Human_Detection:
                     confidences.append(float(confidence))
                     class_ids.append(self.class_id)
 
-        return boxes, centers, confidences, class_ids
+        iboxes=[]
+        icenters=[]
+        iconfidences=[]
+        ids=[]
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        if len(indices) > 0:
+            for i in indices.flatten():
+                iboxes.append(boxes[i])
+                icenters.append(centers[i])
+                iconfidences.append(confidences[i])
+                ids.append(class_ids[i])             
+        return iboxes, icenters, iconfidences, ids
 
 class Human_Tracking_Node:
     def __init__(self):
@@ -271,6 +292,7 @@ class Human_Tracking_Node:
 
     #get angle of target from image
     def getAngle(self, x, y):
+        """
         if(y>image_width/2):
             angle_y = (y/image_width)*45
         elif(y<image_width/2):
@@ -284,7 +306,13 @@ class Human_Tracking_Node:
             angle_x = 45+(x/image_height)*45
         elif(x==image_height/2):
             angle_x=0
-        
+        """
+        #for D455
+        hfov = 90
+        vfov = 45
+        camera_angle = 45
+        angle_x = camera_angle+(vfov/2)-((vfov*x)/image_height)
+        angle_y = (hfov*y)/image_height-(hfov/2)#for D455
         return angle_x, angle_y
 
     #When there is a new image updated, call this function
@@ -340,7 +368,7 @@ class Human_Tracking_Node:
                 self.target_coordinates.linear.x, self.target_coordinates.linear.y = getCoordinate(y,x, distance)
                 self.target_coordinates.linear.z = 0
                 self.target_coordinates_pub.publish(self.target_coordinates)
-                self.message_pub.publish("Target base on UAV coordinates:\n"+str("x: {:.3f}\n".format(self.target_coordinates.linear.x))+str("y: {:.3f}\n".format(self.target_coordinates.linear.x)))
+                self.message_pub.publish("Target base on UAV coordinates:\n"+str("x: {:.3f}\n".format(self.target_coordinates.linear.x))+str("y: {:.3f}\n".format(self.target_coordinates.linear.y)))
                 #if people without mask detected, tracking that people
                 if(self.track_target):
                     self.target.linear.x = x
