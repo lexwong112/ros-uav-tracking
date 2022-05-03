@@ -283,6 +283,12 @@ class Human_Tracking_Node:
         self.confidences = []
         self.class_ids = []
 
+        #object tracking
+        self.multiTracker = cv2.legacy.MultiTracker_create()
+        self.center_points_cur_frame = []
+        self.tracker_id = 0
+        self.tracking_objects = {}
+        self.tracker = tracker = cv2.legacy.TrackerKCF_create()
 
         self.fps = np.zeros(30)
         self.avg_fps = 0
@@ -314,6 +320,85 @@ class Human_Tracking_Node:
         angle_x = camera_angle+(vfov/2)-((vfov*x)/image_height)
         angle_y = (hfov*y)/image_height-(hfov/2)#for D455
         return angle_x, angle_y
+
+    #target tracking and obtain unique ID
+    def object_tracker(self, frame):
+        # Point current frame
+        self.center_points_cur_frame = []
+        if self.frame%10 == 1:
+            boxes = []
+            (class_ids, scores, boxes) = od.detect(frame)
+            bboxes = copy.copy(self.boxes)
+            for box in bboxes:
+                self.multiTracker.add(self.tracker, frame, box)
+                (x, y, w, h) = box
+                cx = int((x + x + w) / 2)
+                cy = int((y + y + h) / 2)
+                self.center_points_cur_frame.append((cx, cy))
+                #print("FRAME N°", count, " ", x, y, w, h)
+
+                # cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        else: 
+            print("MOT")
+            boxes = []
+            success, boxes = multiTracker.update(frame)
+            for i, newbox in enumerate(boxes):
+                p1 = (int(newbox[0]), int(newbox[1]))
+                p2 = (int(newbox[0] + newbox[2]), int(newbox[1] + newbox[3]))
+                cv2.rectangle(frame, p1, p2, (0, 255, 0), 2, 1)
+        
+
+        # Only at the beginning we compare previous and current frame
+        if count <= 5:
+            for pt in center_points_cur_frame:
+                for pt2 in center_points_prev_frame:
+                    distance = math.hypot(pt2[0] - pt[0], pt2[1] - pt[1])
+
+                    if distance < 20:
+                        tracking_objects[self.track_id] = pt
+                        track_id += 1
+        else:
+
+            tracking_objects_copy = tracking_objects.copy()
+            center_points_cur_frame_copy = self.center_points_cur_frame.copy()
+
+            for object_id, pt2 in tracking_objects_copy.items():
+                object_exists = False
+                for pt in center_points_cur_frame_copy:
+                    distance = math.hypot(pt2[0] - pt[0], pt2[1] - pt[1])
+
+                    # Update IDs position
+                    if distance < 20:
+                        tracking_objects[object_id] = pt
+                        object_exists = True
+                        if pt in self.center_points_cur_frame:
+                            self.center_points_cur_frame.remove(pt)
+                        continue
+
+                # Remove IDs lost
+                if not object_exists:
+                    tracking_objects.pop(object_id)
+
+            # Add new IDs found
+            for pt in center_points_cur_frame:
+                tracking_objects[track_id] = pt
+                track_id += 1
+
+        for object_id, pt in tracking_objects.items():
+            cv2.circle(frame, pt, 5, (0, 0, 255), -1)
+            cv2.putText(frame, str(object_id), (pt[0], pt[1] - 7), 0, 1, (0, 0, 255), 2)
+
+        print("Tracking objects")
+        print(tracking_objects)
+
+
+        print("CUR FRAME LEFT PTS")
+        print(center_points_cur_frame)
+
+        # Make a copy of the points
+        center_points_prev_frame = center_points_cur_frame.copy()
+
 
     #When there is a new image updated, call this function
     def callback(self, image, depth, camera_info):
@@ -351,6 +436,8 @@ class Human_Tracking_Node:
                 self.avg_fps += self.fps[x]
         self.avg_fps = self.avg_fps/30
 
+        #tracking target
+        object_tracker(cv_image)
         #publish detection result and performance
         self.output_pub.publish(str(self.boxes)+'|'+str(self.confidences)+'|'+str(self.class_ids))      
         self.fps_pub.publish(str("{:.2f}".format(self.avg_fps)))
