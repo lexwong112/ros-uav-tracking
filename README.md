@@ -1,4 +1,4 @@
-# UAV_Human-Tracking_ROS
+# ros-uav-tracking
 
 # Prerequisities
 * Ros Noetic / Melodic(Requrie Python3 catkin_ws)
